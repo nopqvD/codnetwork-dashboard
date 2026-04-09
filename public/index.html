@@ -1065,19 +1065,19 @@ tbody tr:hover td { background: var(--surface2); }
       <div class="kpi-icon">💵</div>
       <div class="kpi-label">Today Revenue</div>
       <div class="kpi-value" id="k-today">—</div>
-      <div class="kpi-sub">USD · today only</div>
+      <div class="kpi-sub">USD · confirmed today</div>
     </div>
     <div class="kpi" style="--kpi-color:var(--yellow);--kpi-glow:var(--yellow-dim)">
       <div class="kpi-icon">📅</div>
       <div class="kpi-label">Monthly Revenue</div>
       <div class="kpi-value" id="k-month">—</div>
-      <div class="kpi-sub">USD · current month</div>
+      <div class="kpi-sub">USD · confirmed this month</div>
     </div>
     <div class="kpi" style="--kpi-color:var(--violet);--kpi-glow:var(--violet-dim)">
-      <div class="kpi-icon">🌍</div>
-      <div class="kpi-label">Sample Revenue</div>
+      <div class="kpi-icon">✅</div>
+      <div class="kpi-label">Confirmed Revenue</div>
       <div class="kpi-value" id="k-rev">—</div>
-      <div class="kpi-sub">USD · from sample</div>
+      <div class="kpi-sub">USD · confirmed + shipped</div>
     </div>
   </div>
 
@@ -1287,19 +1287,19 @@ tbody tr:hover td { background: var(--surface2); }
   <!-- Revenue bands -->
   <div class="profit-bands fade-up">
     <div class="profit-band">
-      <div class="profit-band-label">💵 Today</div>
+      <div class="profit-band-label">💵 Today (Confirmed)</div>
       <div class="profit-band-val" id="p-today" style="color:var(--green)">—</div>
-      <div style="font-size:.7rem;color:var(--text3)">USD</div>
+      <div style="font-size:.7rem;color:var(--text3)">USD · confirmed today</div>
     </div>
     <div class="profit-band">
-      <div class="profit-band-label">📅 This Month</div>
+      <div class="profit-band-label">📅 This Month (Confirmed)</div>
       <div class="profit-band-val" id="p-month" style="color:var(--cyan)">—</div>
-      <div style="font-size:.7rem;color:var(--text3)">USD</div>
+      <div style="font-size:.7rem;color:var(--text3)">USD · confirmed this month</div>
     </div>
     <div class="profit-band">
-      <div class="profit-band-label">📊 Sample Total</div>
+      <div class="profit-band-label">✅ All-Time (Confirmed)</div>
       <div class="profit-band-val" id="p-total" style="color:var(--violet)">—</div>
-      <div style="font-size:.7rem;color:var(--text3)">USD · from <span id="p-sampled">—</span> orders</div>
+      <div style="font-size:.7rem;color:var(--text3)">USD · <span id="p-sampled">—</span> confirmed orders</div>
     </div>
   </div>
 
@@ -1649,13 +1649,14 @@ function renderOverview() {
   if (!statsData) return;
   // KPIs
   animateNum('k-total',   statsData.totalOrders);
-  animateNum('k-today',   statsData.todayRevenue,  true);
-  animateNum('k-month',   statsData.monthRevenue,  true);
-  animateNum('k-rev',     statsData.sampleTotal,   true);
+  animateNum('k-today',   statsData.confirmedTodayRevenue,  true);
+  animateNum('k-month',   statsData.confirmedMonthRevenue,  true);
+  animateNum('k-rev',     statsData.confirmedRevenue,       true);
   animateNum('k-tracked', statsData.tracked);
   animateNum('k-delivered', statsData.delivered);
   animateNum('k-returned',  statsData.returned);
-  document.getElementById('k-sampled').textContent = `${en(statsData.sampledOrders)} orders analyzed`;
+  const fullBadge = statsData.isFull ? ' ✅' : ' ⚠️ partial';
+  document.getElementById('k-sampled').textContent = `${en(statsData.sampledOrders)} / ${en(statsData.totalOrders)} fetched${fullBadge}`;
 
   // Status bars
   const sc = statsData.statusCount;
@@ -1670,7 +1671,7 @@ function renderOverview() {
       <div class="status-num" style="color:${col}">${en(count)}</div>
     </div>`;
   }).join('');
-  document.getElementById('status-badge').textContent = `${en(statsData.sampledOrders)} sampled`;
+  document.getElementById('status-badge').textContent = `${en(statsData.sampledOrders)} / ${en(statsData.totalOrders)} orders${statsData.isFull ? ' ✅' : ' ⚠️'}`;
   // Animate bars
   requestAnimationFrame(() => {
     document.querySelectorAll('.bar-fill').forEach(el => {
@@ -1695,10 +1696,10 @@ function renderOverview() {
 
 function renderProfits() {
   if (!statsData) return;
-  document.getElementById('p-today').textContent   = usd(statsData.todayRevenue);
-  document.getElementById('p-month').textContent   = usd(statsData.monthRevenue);
-  document.getElementById('p-total').textContent   = usd(statsData.sampleTotal);
-  document.getElementById('p-sampled').textContent = en(statsData.sampledOrders);
+  document.getElementById('p-today').textContent   = usd(statsData.confirmedTodayRevenue);
+  document.getElementById('p-month').textContent   = usd(statsData.confirmedMonthRevenue);
+  document.getElementById('p-total').textContent   = usd(statsData.confirmedRevenue);
+  document.getElementById('p-sampled').textContent = en(statsData.confirmed + statsData.delivered + statsData.shipped);
   const dl = statsData.dailyChart;
   makeLineChart('dailyChart2', dl.map(d=>d.label), dl.map(d=>d.rev), 'Daily Revenue (USD)', '#34d399');
   const ml = statsData.monthlyChart;

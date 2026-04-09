@@ -114,23 +114,30 @@ function classifyStatus(st) {
   return 'other';
 }
 
-// ── Stats (8-page sample, totals from meta) ────────────────────────────────────
+// ── Stats: fetch ALL orders in controlled parallel batches ─────────────────────
+// Batch size 10 = 10 concurrent HTTPS requests at a time → fast + safe vs rate limits.
+// With 3,516 orders / 100 per page = 36 pages → ~4 batches → completes in ~4 API round-trips.
 async function buildStats(token) {
   const ck = cacheKey('stats', token);
   const hit = getCache(ck);
   if (hit) return hit;
 
-  const p1 = await apiGet(token, '/orders', { page: 1 });
-  const meta       = p1.meta?.pagination || {};
-  const totalOrders = meta.total || 0;
+  // Page 1 tells us the total
+  const p1          = await apiGet(token, '/orders', { page: 1 });
+  const meta        = p1.meta?.pagination || {};
+  const totalOrders = meta.total       || 0;
   const totalPages  = meta.total_pages || 1;
 
-  const batchPages = [];
-  for (let i = 2; i <= Math.min(totalPages, 8); i++) batchPages.push(i);
-  const batchRes = await Promise.allSettled(batchPages.map(p => apiGet(token, '/orders', { page: p })));
+  let orders = [...(p1.data || [])];
 
-  let orders = [...(p1.data||[])];
-  batchRes.forEach(r => { if (r.status==='fulfilled') orders=orders.concat(r.value.data||[]); });
+  // Fetch remaining pages in batches of 10 (parallel within each batch)
+  const BATCH = 10;
+  for (let start = 2; start <= totalPages; start += BATCH) {
+    const pages = [];
+    for (let p = start; p < start + BATCH && p <= totalPages; p++) pages.push(p);
+    const results = await Promise.allSettled(pages.map(p => apiGet(token, '/orders', { page: p })));
+    results.forEach(r => { if (r.status === 'fulfilled') orders = orders.concat(r.value.data || []); });
+  }
 
   const statusCount  = {};
   const dailyRev     = {};
@@ -163,18 +170,50 @@ async function buildStats(token) {
     monthlyChart.push({ month:k, label, rev:r2(monthlyRev[k]||0) });
   }
 
+  const confirmed = orders.filter(o => classifyStatus(o.status) === 'confirmed').length;
+  const delivered = orders.filter(o => classifyStatus(o.status) === 'delivered').length;
+  const returned  = orders.filter(o => classifyStatus(o.status) === 'returned').length;
+  const cancelled = orders.filter(o => classifyStatus(o.status) === 'cancelled').length;
+  const shipped   = orders.filter(o => classifyStatus(o.status) === 'shipped').length;
+  const pending   = orders.filter(o => classifyStatus(o.status) === 'pending').length;
+
+  // Revenue: ONLY from confirmed + delivered orders (actual sales, not pending/cancelled)
+  const confirmedRevenue = r2(
+    orders
+      .filter(o => ['confirmed','delivered','shipped'].includes(classifyStatus(o.status)))
+      .reduce((s,o) => s + (parseFloat(o.total_usd)||0), 0)
+  );
+  const totalRevenue = r2(orders.reduce((s,o) => s + (parseFloat(o.total_usd)||0), 0));
+
+  // Today's and monthly confirmed revenue
+  const confirmedTodayRevenue  = r2(
+    orders.filter(o => (o.created_at||'').slice(0,10) === todayStr &&
+      ['confirmed','delivered','shipped'].includes(classifyStatus(o.status)))
+      .reduce((s,o) => s + (parseFloat(o.total_usd)||0), 0)
+  );
+  const confirmedMonthRevenue  = r2(
+    orders.filter(o => (o.created_at||'').slice(0,7) === monthStr &&
+      ['confirmed','delivered','shipped'].includes(classifyStatus(o.status)))
+      .reduce((s,o) => s + (parseFloat(o.total_usd)||0), 0)
+  );
+
   const data = {
     totalOrders,
-    sampledOrders  : orders.length,
+    sampledOrders : orders.length,   // should equal totalOrders — all fetched
+    isFull        : orders.length >= totalOrders,
     statusCount,
-    sampleTotal    : r2(orders.reduce((s,o)=>s+(parseFloat(o.total_usd)||0),0)),
-    todayRevenue   : r2(dailyRev[todayStr] ||0),
-    monthRevenue   : r2(monthlyRev[monthStr]||0),
-    tracked        : orders.filter(o=>o.tracking_number).length,
-    delivered      : orders.filter(o=>classifyStatus(o.status)==='delivered').length,
-    returned       : orders.filter(o=>classifyStatus(o.status)==='returned').length,
+    // Revenue (all orders in sample)
+    totalRevenue,
+    confirmedRevenue,
+    todayRevenue          : r2(dailyRev[todayStr]  || 0),
+    monthRevenue          : r2(monthlyRev[monthStr] || 0),
+    confirmedTodayRevenue,
+    confirmedMonthRevenue,
+    // Order counts by status
+    confirmed, delivered, returned, cancelled, shipped, pending,
+    tracked  : orders.filter(o => o.tracking_number).length,
     dailyChart, monthlyChart,
-    refreshedAt    : new Date().toISOString(),
+    refreshedAt : new Date().toISOString(),
   };
 
   setCache(ck, data);
