@@ -1,0 +1,2461 @@
+<!DOCTYPE html>
+<html lang="en" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>CODNETWORK · Dashboard</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Cairo:wght@400;600;700;900&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+/* ═══════════════════════════════════════════
+   LOGIN PAGE
+═══════════════════════════════════════════ */
+#loginPage {
+  position: fixed; inset: 0; z-index: 10000;
+  background: var(--bg);
+  display: flex; align-items: center; justify-content: center;
+}
+#loginPage.hidden { display: none; }
+
+.login-card {
+  background: var(--surface);
+  border: 1px solid var(--border2);
+  border-radius: 24px;
+  padding: 44px 40px;
+  width: min(460px, 94vw);
+  box-shadow: 0 32px 80px rgba(0,0,0,0.5);
+  animation: fadeUp .4s ease;
+}
+.login-logo {
+  display: flex; align-items: center; gap: 12px;
+  margin-bottom: 32px;
+}
+.login-logo-icon {
+  width: 52px; height: 52px; border-radius: 16px; flex-shrink: 0;
+  background: linear-gradient(135deg, var(--cyan), var(--violet));
+  display: flex; align-items: center; justify-content: center;
+  font-size: 1.5rem; box-shadow: var(--glow-c);
+}
+.login-logo-text { font-size: 1.35rem; font-weight: 800; color: var(--cyan); font-family: var(--font-en); }
+.login-logo-sub  { font-size: .76rem; color: var(--text3); }
+
+.login-heading { font-size: 1.1rem; font-weight: 700; margin-bottom: 6px; }
+.login-sub { font-size: .82rem; color: var(--text3); margin-bottom: 28px; line-height: 1.5; }
+
+.login-field { margin-bottom: 18px; }
+.login-label {
+  display: block; font-size: .74rem; font-weight: 600;
+  color: var(--text3); text-transform: uppercase; letter-spacing: .5px;
+  margin-bottom: 7px;
+}
+.login-input {
+  width: 100%; background: var(--surface2); border: 1px solid var(--border);
+  color: var(--text); padding: 12px 16px; border-radius: 11px;
+  font-size: .88rem; font-family: var(--font-en); outline: none;
+  transition: border-color .2s, box-shadow .2s;
+}
+.login-input:focus { border-color: var(--cyan); box-shadow: 0 0 0 3px var(--cyan-dim); }
+.login-input::placeholder { color: var(--text3); font-size: .82rem; }
+
+.login-hint {
+  font-size: .72rem; color: var(--text3); margin-top: 5px; line-height: 1.5;
+}
+.login-hint a { color: var(--cyan); text-decoration: none; }
+.login-hint a:hover { text-decoration: underline; }
+
+.login-btn {
+  width: 100%; padding: 13px; border: none; border-radius: 12px;
+  background: linear-gradient(135deg, var(--cyan), var(--violet));
+  color: #fff; font-size: .95rem; font-weight: 700;
+  font-family: var(--font-ar); cursor: pointer;
+  box-shadow: var(--glow-c); transition: all .2s; margin-top: 6px;
+}
+.login-btn:hover { transform: translateY(-2px); box-shadow: 0 0 32px var(--cyan-glow); }
+.login-btn:disabled { opacity: .6; cursor: not-allowed; transform: none; }
+
+.login-error {
+  background: var(--red-dim); border: 1px solid rgba(248,113,113,.2);
+  color: var(--red); padding: 10px 14px; border-radius: 9px;
+  font-size: .82rem; margin-top: 14px; display: none;
+  font-family: var(--font-en);
+}
+.login-error.visible { display: block; }
+
+.login-secure {
+  display: flex; align-items: center; gap: 6px; justify-content: center;
+  font-size: .72rem; color: var(--text3); margin-top: 20px;
+}
+
+/* ═══════════════════════════════════════════
+   CSS VARIABLES — DARK & LIGHT THEMES
+═══════════════════════════════════════════ */
+:root {
+  --bg:        #060810;
+  --bg2:       #0b0e1a;
+  --bg3:       #10142080;
+  --surface:   #0f1320;
+  --surface2:  #151a2e;
+  --surface3:  #1c2240;
+  --border:    rgba(255,255,255,0.06);
+  --border2:   rgba(99,179,237,0.2);
+
+  /* Neon palette */
+  --cyan:      #38bdf8;
+  --cyan-glow: rgba(56,189,248,0.35);
+  --cyan-dim:  rgba(56,189,248,0.12);
+  --violet:    #a78bfa;
+  --violet-dim:rgba(167,139,250,0.12);
+  --green:     #34d399;
+  --green-dim: rgba(52,211,153,0.12);
+  --red:       #f87171;
+  --red-dim:   rgba(248,113,113,0.12);
+  --orange:    #fb923c;
+  --orange-dim:rgba(251,146,60,0.12);
+  --yellow:    #fbbf24;
+  --yellow-dim:rgba(251,191,36,0.12);
+  --pink:      #f472b6;
+
+  --text:      #e2e8f0;
+  --text2:     #94a3b8;
+  --text3:     #475569;
+
+  --card-shadow: 0 4px 24px rgba(0,0,0,0.5);
+  --glow-c:    0 0 20px rgba(56,189,248,0.3);
+  --glow-v:    0 0 20px rgba(167,139,250,0.3);
+  --glow-g:    0 0 20px rgba(52,211,153,0.3);
+
+  --font-en: 'Inter', sans-serif;
+  --font-ar: 'Cairo', 'Inter', sans-serif;
+}
+
+/* Light theme */
+html.light {
+  --bg:        #f0f4ff;
+  --bg2:       #e8eef8;
+  --bg3:       rgba(220,230,255,0.7);
+  --surface:   #ffffff;
+  --surface2:  #f4f7fe;
+  --surface3:  #edf1fb;
+  --border:    rgba(0,0,0,0.08);
+  --border2:   rgba(56,130,220,0.25);
+
+  --cyan:      #0284c7;
+  --cyan-glow: rgba(2,132,199,0.2);
+  --cyan-dim:  rgba(2,132,199,0.1);
+  --violet:    #7c3aed;
+  --violet-dim:rgba(124,58,237,0.1);
+  --green:     #059669;
+  --green-dim: rgba(5,150,105,0.1);
+  --red:       #dc2626;
+  --red-dim:   rgba(220,38,38,0.1);
+  --orange:    #ea580c;
+  --orange-dim:rgba(234,88,12,0.1);
+  --yellow:    #d97706;
+  --yellow-dim:rgba(217,119,6,0.1);
+
+  --text:      #0f172a;
+  --text2:     #475569;
+  --text3:     #94a3b8;
+
+  --card-shadow: 0 2px 16px rgba(0,0,0,0.08);
+}
+
+/* ═══════════════════════════════════════════
+   RESET & BASE
+═══════════════════════════════════════════ */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { direction: rtl; scroll-behavior: smooth; }
+body {
+  font-family: var(--font-ar);
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  overflow-x: hidden;
+  transition: background 0.4s, color 0.4s;
+}
+
+/* Ambient grid lines (dark only) */
+html:not(.light) body::after {
+  content: '';
+  position: fixed; inset: 0;
+  background-image:
+    linear-gradient(rgba(56,189,248,0.025) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(56,189,248,0.025) 1px, transparent 1px);
+  background-size: 52px 52px;
+  pointer-events: none; z-index: 0;
+}
+
+/* Radial ambient glow (dark only) */
+html:not(.light) body::before {
+  content: '';
+  position: fixed; top: -100px; right: -100px;
+  width: 700px; height: 700px;
+  background: radial-gradient(circle, rgba(56,189,248,0.06) 0%, transparent 65%);
+  pointer-events: none; z-index: 0;
+}
+
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--surface3); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--cyan); }
+
+/* ═══════════════════════════════════════════
+   ANIMATIONS
+═══════════════════════════════════════════ */
+@keyframes fadeUp   { from { opacity:0; transform:translateY(12px) } to { opacity:1; transform:none } }
+@keyframes fadeIn   { from { opacity:0 } to { opacity:1 } }
+@keyframes spin     { to { transform: rotate(360deg) } }
+@keyframes pulse    { 0%,100% { opacity:1 } 50% { opacity:.4 } }
+@keyframes glow-pulse {
+  0%,100% { box-shadow: 0 0 8px var(--cyan-glow) }
+  50%      { box-shadow: 0 0 28px var(--cyan-glow), 0 0 60px var(--cyan-dim) }
+}
+@keyframes number-pop { 0% { transform:scale(.8); opacity:0 } 60% { transform:scale(1.04) } 100% { transform:scale(1); opacity:1 } }
+@keyframes slide-in  { from { opacity:0; transform:translateX(-8px) } to { opacity:1; transform:none } }
+
+.fade-up  { animation: fadeUp  .35s ease forwards; }
+.fade-in  { animation: fadeIn  .3s  ease forwards; }
+.num-pop  { animation: number-pop .5s cubic-bezier(.34,1.56,.64,1) forwards; }
+
+/* ═══════════════════════════════════════════
+   LOADING OVERLAY
+═══════════════════════════════════════════ */
+#overlay {
+  position: fixed; inset: 0; z-index: 9999;
+  background: var(--bg);
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 20px;
+  transition: opacity .4s;
+}
+#overlay.gone { opacity: 0; pointer-events: none; }
+.overlay-logo {
+  width: 64px; height: 64px; border-radius: 20px;
+  background: linear-gradient(135deg, var(--cyan), var(--violet));
+  display: flex; align-items: center; justify-content: center;
+  font-size: 2rem;
+  box-shadow: var(--glow-c);
+  animation: glow-pulse 2s ease-in-out infinite;
+}
+.overlay-spin {
+  width: 40px; height: 40px;
+  border: 3px solid var(--surface3);
+  border-top-color: var(--cyan);
+  border-radius: 50%;
+  animation: spin .7s linear infinite;
+}
+.overlay-text { font-family: var(--font-en); font-size: .85rem; color: var(--text2); }
+.overlay-sub  { font-size: .75rem; color: var(--text3); }
+
+/* ═══════════════════════════════════════════
+   HEADER
+═══════════════════════════════════════════ */
+header {
+  position: sticky; top: 0; z-index: 100;
+  background: var(--bg3);
+  backdrop-filter: blur(24px);
+  border-bottom: 1px solid var(--border);
+  padding: 0 24px;
+}
+.hd {
+  max-width: 1380px; margin: 0 auto;
+  height: 58px;
+  display: flex; align-items: center; justify-content: space-between; gap: 16px;
+}
+.logo {
+  display: flex; align-items: center; gap: 11px;
+  text-decoration: none;
+}
+.logo-icon {
+  width: 36px; height: 36px; border-radius: 11px; flex-shrink: 0;
+  background: linear-gradient(135deg, var(--cyan), var(--violet));
+  display: flex; align-items: center; justify-content: center;
+  font-size: 1.1rem; box-shadow: var(--glow-c);
+}
+.logo-name  { font-family: var(--font-en); font-size: .95rem; font-weight: 800; color: var(--cyan); letter-spacing: -.3px; }
+.logo-sub   { font-size: .68rem; color: var(--text3); font-weight: 400; margin-top: 1px; }
+.hd-right   { display: flex; align-items: center; gap: 10px; }
+
+/* Live badge */
+.badge-live {
+  display: flex; align-items: center; gap: 6px;
+  font-size: .72rem; font-weight: 600; letter-spacing: .3px;
+  color: var(--green);
+  background: var(--green-dim);
+  border: 1px solid rgba(52,211,153,0.22);
+  padding: 4px 12px; border-radius: 20px;
+}
+.dot-live {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--green);
+  animation: pulse 2s ease-in-out infinite;
+}
+
+/* Theme toggle */
+.theme-toggle {
+  width: 44px; height: 24px; border-radius: 12px;
+  background: var(--surface3); border: 1px solid var(--border);
+  cursor: pointer; position: relative; transition: background .3s;
+  flex-shrink: 0;
+}
+.theme-toggle::after {
+  content: '';
+  position: absolute; top: 3px; right: 3px;
+  width: 16px; height: 16px; border-radius: 50%;
+  background: var(--cyan);
+  box-shadow: var(--glow-c);
+  transition: transform .3s, background .3s;
+}
+html.light .theme-toggle::after { transform: translateX(-20px); background: var(--yellow); }
+
+/* Header buttons */
+.hd-btn {
+  background: var(--surface2); border: 1px solid var(--border);
+  color: var(--text2); padding: 7px 14px; border-radius: 9px;
+  cursor: pointer; font-size: .8rem; font-family: var(--font-ar); font-weight: 600;
+  display: flex; align-items: center; gap: 6px; transition: all .2s;
+  white-space: nowrap;
+}
+.hd-btn:hover { border-color: var(--cyan); color: var(--cyan); background: var(--cyan-dim); }
+.hd-btn:disabled { opacity: .5; cursor: not-allowed; }
+.refresh-ts { font-size: .7rem; color: var(--text3); font-family: var(--font-en); }
+.webhook-badge {
+  font-size: .72rem; font-weight: 600; padding: 3px 10px; border-radius: 10px;
+  background: var(--violet-dim); color: var(--violet);
+  border: 1px solid rgba(167,139,250,0.2);
+}
+
+/* ═══════════════════════════════════════════
+   TABS
+═══════════════════════════════════════════ */
+.tabs-bar {
+  background: var(--bg3);
+  backdrop-filter: blur(16px);
+  border-bottom: 1px solid var(--border);
+  padding: 0 24px;
+  position: sticky; top: 58px; z-index: 90;
+}
+.tabs-inner {
+  max-width: 1380px; margin: 0 auto;
+  display: flex; overflow-x: auto; scrollbar-width: none; gap: 2px;
+}
+.tabs-inner::-webkit-scrollbar { display: none; }
+.tab {
+  padding: 13px 20px; border: none; background: 0;
+  cursor: pointer; font-size: .82rem; font-weight: 600; font-family: var(--font-ar);
+  color: var(--text3); border-bottom: 2px solid transparent;
+  transition: all .2s; white-space: nowrap;
+  display: flex; align-items: center; gap: 7px;
+}
+.tab:hover { color: var(--text2); }
+.tab.active { color: var(--cyan); border-bottom-color: var(--cyan); }
+.tab-count {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 20px; height: 18px; padding: 0 5px; border-radius: 9px;
+  font-size: .68rem; font-family: var(--font-en);
+  background: var(--cyan-dim); color: var(--cyan);
+}
+
+/* ═══════════════════════════════════════════
+   MAIN CONTENT
+═══════════════════════════════════════════ */
+main {
+  position: relative; z-index: 1;
+  max-width: 1380px; margin: 0 auto;
+  padding: 24px;
+}
+.page { display: none; }
+.page.active { display: block; }
+
+/* ═══════════════════════════════════════════
+   LAYOUT GRIDS
+═══════════════════════════════════════════ */
+.grid-4 { display: grid; grid-template-columns: repeat(4,1fr); gap: 16px; margin-bottom: 20px; }
+.grid-3 { display: grid; grid-template-columns: repeat(3,1fr); gap: 16px; margin-bottom: 20px; }
+.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-bottom: 20px; }
+.grid-2-1 { display: grid; grid-template-columns: 2fr 1fr; gap: 18px; margin-bottom: 20px; }
+.mb { margin-bottom: 20px; }
+
+@media (max-width: 1100px) { .grid-4 { grid-template-columns: repeat(2,1fr); } }
+@media (max-width: 800px)  {
+  .grid-4, .grid-3, .grid-2, .grid-2-1 { grid-template-columns: 1fr; }
+}
+
+/* ═══════════════════════════════════════════
+   KPI CARDS
+═══════════════════════════════════════════ */
+.kpi {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 22px 20px;
+  position: relative; overflow: hidden;
+  box-shadow: var(--card-shadow);
+  transition: transform .2s, box-shadow .2s, border-color .2s;
+  cursor: default;
+}
+.kpi:hover { transform: translateY(-3px); border-color: var(--kpi-color, var(--cyan)); }
+.kpi:hover { box-shadow: var(--card-shadow), 0 0 24px var(--kpi-glow, var(--cyan-dim)); }
+
+/* Glow top line */
+.kpi::before {
+  content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px;
+  background: linear-gradient(90deg, transparent, var(--kpi-color, var(--cyan)), transparent);
+  opacity: .8;
+}
+/* Ambient corner glow */
+.kpi::after {
+  content: ''; position: absolute; top: -20px; left: -20px;
+  width: 80px; height: 80px; border-radius: 50%;
+  background: radial-gradient(circle, var(--kpi-glow, var(--cyan-dim)) 0%, transparent 70%);
+  pointer-events: none;
+}
+
+.kpi-icon {
+  width: 42px; height: 42px; border-radius: 12px;
+  background: var(--kpi-glow, var(--cyan-dim));
+  border: 1px solid var(--kpi-color, var(--cyan));
+  display: flex; align-items: center; justify-content: center;
+  font-size: 1.1rem; margin-bottom: 14px;
+  box-shadow: 0 0 12px var(--kpi-glow, var(--cyan-dim));
+}
+.kpi-label {
+  font-size: .72rem; color: var(--text3);
+  text-transform: uppercase; letter-spacing: .6px;
+  font-family: var(--font-ar); margin-bottom: 8px;
+}
+.kpi-value {
+  font-size: 2rem; font-weight: 800; line-height: 1;
+  font-family: var(--font-en);
+  color: var(--kpi-color, var(--cyan));
+}
+.kpi-sub { font-size: .72rem; color: var(--text3); margin-top: 8px; font-family: var(--font-en); }
+.kpi-change {
+  display: inline-flex; align-items: center; gap: 3px;
+  font-size: .72rem; font-weight: 600; font-family: var(--font-en);
+  margin-top: 6px; padding: 2px 8px; border-radius: 6px;
+}
+.kpi-change.up   { color: var(--green); background: var(--green-dim); }
+.kpi-change.down { color: var(--red);   background: var(--red-dim);   }
+
+/* ═══════════════════════════════════════════
+   PANELS
+═══════════════════════════════════════════ */
+.panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow: var(--card-shadow);
+  transition: border-color .2s;
+}
+.panel:hover { border-color: var(--border2); }
+.panel-head {
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px;
+}
+.panel-title {
+  font-size: .88rem; font-weight: 700;
+  display: flex; align-items: center; gap: 8px; color: var(--text);
+}
+.panel-title-en { font-family: var(--font-en); }
+.panel-badge {
+  font-size: .7rem; font-weight: 600; font-family: var(--font-en);
+  padding: 2px 9px; border-radius: 8px; background: var(--cyan-dim); color: var(--cyan);
+}
+.panel-body { padding: 20px; }
+.panel-body-sm { padding: 14px 18px; }
+
+/* ═══════════════════════════════════════════
+   CHART WRAPPERS
+═══════════════════════════════════════════ */
+.chart-wrap { position: relative; height: 260px; }
+.chart-wrap-sm { position: relative; height: 200px; }
+
+/* ═══════════════════════════════════════════
+   STATUS ROWS (Overview)
+═══════════════════════════════════════════ */
+.status-list { display: flex; flex-direction: column; gap: 11px; }
+.status-row { display: flex; align-items: center; gap: 10px; }
+.status-name {
+  width: 108px; font-size: .78rem; color: var(--text2);
+  text-align: right; font-family: var(--font-en); flex-shrink: 0;
+}
+.bar-track {
+  flex: 1; height: 7px; border-radius: 4px;
+  background: var(--surface3); overflow: hidden;
+}
+.bar-fill {
+  height: 100%; border-radius: 4px;
+  transition: width 1.2s cubic-bezier(.4,0,.2,1);
+  position: relative; overflow: hidden;
+}
+.bar-fill::after {
+  content: ''; position: absolute; inset: 0;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.15), transparent);
+  animation: shimmer 2.5s ease-in-out infinite;
+  background-size: 200% 100%;
+}
+@keyframes shimmer {
+  0% { background-position: 200% 0 } 100% { background-position: -200% 0 }
+}
+.status-num {
+  width: 48px; font-size: .8rem; font-weight: 700;
+  font-family: var(--font-en); text-align: left; flex-shrink: 0;
+}
+
+/* ═══════════════════════════════════════════
+   STATUS BADGES
+═══════════════════════════════════════════ */
+.badge {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 3px 10px; border-radius: 20px;
+  font-size: .7rem; font-weight: 700; font-family: var(--font-en);
+  white-space: nowrap;
+}
+.badge::before { content: ''; width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
+.s-new        { background: var(--green-dim);  color: var(--green);  border:1px solid rgba(52,211,153,0.2); }
+.s-assigned   { background: var(--cyan-dim);   color: var(--cyan);   border:1px solid rgba(56,189,248,0.2); }
+.s-processing { background: var(--yellow-dim); color: var(--yellow); border:1px solid rgba(251,191,36,0.2); }
+.s-pending    { background: var(--orange-dim); color: var(--orange); border:1px solid rgba(251,146,60,0.2); }
+.s-shipped    { background: var(--violet-dim); color: var(--violet); border:1px solid rgba(167,139,250,0.2); }
+.s-delivered  { background: var(--green-dim);  color: var(--green);  border:1px solid rgba(52,211,153,0.2); }
+.s-cancelled  { background: var(--red-dim);    color: var(--red);    border:1px solid rgba(248,113,113,0.2); }
+.s-returned   { background: var(--red-dim);    color: var(--orange); border:1px solid rgba(251,146,60,0.2); }
+.s-default    { background: var(--surface3);   color: var(--text3);  border:1px solid var(--border); }
+
+/* ═══════════════════════════════════════════
+   TABLE
+═══════════════════════════════════════════ */
+.tbl-wrap { overflow-x: auto; }
+table {
+  width: 100%; border-collapse: collapse;
+  font-size: .82rem;
+}
+thead th {
+  padding: 11px 14px; text-align: right;
+  color: var(--text3); font-size: .7rem; font-weight: 600;
+  text-transform: uppercase; letter-spacing: .5px;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap; background: var(--surface2);
+  font-family: var(--font-ar);
+}
+tbody td {
+  padding: 13px 14px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle; transition: background .15s;
+}
+tbody tr:last-child td { border-bottom: none; }
+tbody tr:hover td { background: var(--surface2); }
+.td-en   { font-family: var(--font-en); }
+.td-mono { font-family: 'SF Mono','Fira Code',monospace; font-size: .76rem; }
+.td-muted { color: var(--text3); font-size: .76rem; }
+.td-cyan  { color: var(--cyan);  font-weight: 700; font-family: var(--font-en); }
+.td-green { color: var(--green); font-weight: 700; font-family: var(--font-en); }
+
+/* ═══════════════════════════════════════════
+   PAGINATION
+═══════════════════════════════════════════ */
+.pagination {
+  display: flex; align-items: center; justify-content: center;
+  gap: 6px; padding: 16px; border-top: 1px solid var(--border);
+}
+.pg-btn {
+  min-width: 32px; height: 32px; padding: 0 8px;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 8px; cursor: pointer;
+  border: 1px solid var(--border); background: var(--surface2);
+  color: var(--text2); font-size: .8rem; font-family: var(--font-en);
+  transition: all .2s;
+}
+.pg-btn:hover { background: var(--cyan-dim); border-color: var(--cyan); color: var(--cyan); }
+.pg-btn.active { background: var(--cyan); border-color: var(--cyan); color: var(--bg); font-weight: 700; }
+.pg-info { font-size: .76rem; color: var(--text3); font-family: var(--font-en); padding: 0 8px; }
+
+/* ═══════════════════════════════════════════
+   SEARCH BAR
+═══════════════════════════════════════════ */
+.search-wrap { display: flex; gap: 10px; margin-bottom: 16px; }
+.search-input {
+  flex: 1; background: var(--surface); border: 1px solid var(--border);
+  color: var(--text); padding: 10px 16px; border-radius: 10px;
+  font-size: .84rem; font-family: var(--font-ar); outline: none;
+  transition: border-color .2s, box-shadow .2s;
+}
+.search-input:focus {
+  border-color: var(--cyan);
+  box-shadow: 0 0 0 3px var(--cyan-dim);
+}
+.search-input::placeholder { color: var(--text3); }
+
+/* ═══════════════════════════════════════════
+   INVENTORY — ENHANCED
+═══════════════════════════════════════════ */
+
+/* Shipping days config bar */
+.ship-config {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 14px; padding: 16px 20px; margin-bottom: 20px;
+  box-shadow: var(--card-shadow);
+}
+.ship-config-head {
+  display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px;
+}
+.ship-config-title { font-size: .88rem; font-weight: 700; display: flex; align-items: center; gap: 7px; }
+.ship-countries { display: flex; flex-wrap: wrap; gap: 10px; }
+.ship-country-item {
+  display: flex; align-items: center; gap: 8px;
+  background: var(--surface2); border: 1px solid var(--border);
+  border-radius: 10px; padding: 8px 12px;
+  transition: border-color .2s;
+}
+.ship-country-item:hover { border-color: var(--cyan); }
+.ship-country-label { font-size: .78rem; color: var(--text2); }
+.ship-days-input {
+  width: 52px; background: var(--surface3); border: 1px solid var(--border);
+  color: var(--cyan); font-family: var(--font-en); font-size: .88rem; font-weight: 700;
+  border-radius: 7px; padding: 4px 8px; text-align: center; outline: none;
+  transition: border-color .2s, box-shadow .2s;
+}
+.ship-days-input:focus { border-color: var(--cyan); box-shadow: 0 0 0 2px var(--cyan-dim); }
+.ship-days-unit { font-size: .7rem; color: var(--text3); }
+
+/* Product group card */
+.pgroup {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 16px; overflow: hidden;
+  box-shadow: var(--card-shadow); margin-bottom: 16px;
+  transition: border-color .2s;
+}
+.pgroup:hover { border-color: var(--border2); }
+.pgroup-head {
+  display: flex; align-items: center; gap: 14px;
+  padding: 18px 20px; cursor: pointer;
+  border-bottom: 1px solid transparent;
+  transition: background .15s, border-color .15s;
+}
+.pgroup-head:hover { background: var(--surface2); }
+.pgroup-head.open { border-bottom-color: var(--border); }
+.pgroup-icon {
+  width: 44px; height: 44px; border-radius: 12px; flex-shrink: 0;
+  background: linear-gradient(135deg, var(--cyan-dim), var(--violet-dim));
+  border: 1px solid var(--border2);
+  display: flex; align-items: center; justify-content: center; font-size: 1.2rem;
+}
+.pgroup-name { font-size: .97rem; font-weight: 700; flex: 1; }
+.pgroup-meta { font-size: .72rem; color: var(--text3); margin-top: 2px; font-family: var(--font-en); }
+.pgroup-total {
+  text-align: right;
+}
+.pgroup-total-val { font-size: 1.5rem; font-weight: 800; font-family: var(--font-en); color: var(--cyan); }
+.pgroup-total-label { font-size: .68rem; color: var(--text3); }
+.pgroup-chevron {
+  font-size: .8rem; color: var(--text3); transition: transform .25s; flex-shrink: 0;
+}
+.pgroup-chevron.open { transform: rotate(180deg); }
+
+/* Country coverage cards grid */
+.country-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 14px; padding: 18px 20px;
+}
+.cc-card {
+  background: var(--surface2); border: 1px solid var(--border);
+  border-radius: 13px; padding: 16px;
+  transition: transform .2s, border-color .2s;
+  position: relative; overflow: hidden;
+}
+.cc-card::before {
+  content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px;
+  background: var(--cc-line, var(--cyan));
+}
+.cc-card:hover { transform: translateY(-2px); border-color: var(--cc-border, var(--border2)); }
+.cc-flag-name {
+  display: flex; align-items: center; gap: 7px;
+  font-size: .9rem; font-weight: 700; margin-bottom: 12px;
+}
+.cc-flag { font-size: 1.2rem; }
+.cc-stock { font-size: 1.6rem; font-weight: 800; font-family: var(--font-en); color: var(--text); line-height: 1; }
+.cc-stock-label { font-size: .68rem; color: var(--text3); margin-bottom: 12px; }
+.cc-divider { height: 1px; background: var(--border); margin: 10px 0; }
+.cc-row { display: flex; justify-content: space-between; align-items: center; font-size: .75rem; margin-bottom: 5px; }
+.cc-row-label { color: var(--text3); }
+.cc-row-val { font-family: var(--font-en); font-weight: 700; }
+.cc-coverage { font-size: .95rem; font-weight: 800; font-family: var(--font-en); }
+.cc-status-badge {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: .72rem; font-weight: 700; font-family: var(--font-en);
+  padding: 4px 10px; border-radius: 8px; margin-top: 12px;
+  letter-spacing: .4px;
+}
+.st-safe     { --cc-line: var(--green);  --cc-border: rgba(52,211,153,.3); }
+.st-warning  { --cc-line: var(--yellow); --cc-border: rgba(251,191,36,.3); }
+.st-critical { --cc-line: var(--red);    --cc-border: rgba(248,113,113,.3); }
+.sb-safe     { background: var(--green-dim);  color: var(--green);  }
+.sb-warning  { background: var(--yellow-dim); color: var(--yellow); }
+.sb-critical { background: var(--red-dim);    color: var(--red);    }
+
+/* SKU breakdown (expanded) */
+.sku-breakdown {
+  display: none; padding: 0 20px 18px;
+  border-top: 1px solid var(--border);
+}
+.sku-breakdown.open { display: block; }
+.sku-bd-head {
+  display: flex; align-items: center; gap: 8px;
+  font-size: .76rem; color: var(--text3); font-weight: 600;
+  padding: 12px 0 8px;
+  text-transform: uppercase; letter-spacing: .5px;
+}
+.sku-bd-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 9px 12px; border-radius: 9px; margin-bottom: 5px;
+  background: var(--surface3); font-size: .78rem;
+  transition: background .15s;
+}
+.sku-bd-row:hover { background: var(--surface2); }
+.sku-bd-name { flex: 1; color: var(--text2); }
+.sku-bd-sku  { color: var(--text3); font-family: var(--font-en); font-size: .72rem; width: 110px; flex-shrink: 0; }
+.sku-co-chips { display: flex; gap: 6px; flex-wrap: wrap; }
+.sku-co-chip {
+  font-size: .7rem; font-family: var(--font-en); font-weight: 600;
+  padding: 2px 8px; border-radius: 6px; white-space: nowrap;
+}
+
+/* Stock qty chips (shared) */
+.stock-qty {
+  font-weight: 700; font-family: var(--font-en);
+  padding: 2px 10px; border-radius: 6px; font-size: .78rem;
+}
+.sq-ok   { background: var(--green-dim);  color: var(--green); }
+.sq-low  { background: var(--yellow-dim); color: var(--yellow); }
+.sq-zero { background: var(--red-dim);    color: var(--red); }
+
+/* Delta badge */
+.delta-neg { background: var(--red-dim);   color: var(--red);   }
+.delta-pos { background: var(--green-dim); color: var(--green); }
+
+/* ═══════════════════════════════════════════
+   MODAL — MANAGE GROUPS
+═══════════════════════════════════════════ */
+.modal-overlay {
+  position: fixed; inset: 0; z-index: 500;
+  background: rgba(0,0,0,0.7);
+  backdrop-filter: blur(6px);
+  display: flex; align-items: center; justify-content: center;
+  opacity: 0; pointer-events: none;
+  transition: opacity .25s;
+}
+.modal-overlay.open { opacity: 1; pointer-events: all; }
+
+.modal-box {
+  background: var(--surface);
+  border: 1px solid var(--border2);
+  border-radius: 18px;
+  width: min(640px, 95vw);
+  max-height: 85vh;
+  display: flex; flex-direction: column;
+  box-shadow: 0 24px 80px rgba(0,0,0,0.6);
+  transform: translateY(16px);
+  transition: transform .25s;
+}
+.modal-overlay.open .modal-box { transform: translateY(0); }
+
+.modal-head {
+  padding: 18px 22px;
+  border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: space-between;
+  font-size: .95rem; font-weight: 700;
+}
+.modal-close {
+  background: var(--surface2); border: 1px solid var(--border);
+  color: var(--text2); width: 32px; height: 32px; border-radius: 8px;
+  cursor: pointer; font-size: 1rem; display: flex; align-items: center; justify-content: center;
+  transition: all .2s;
+}
+.modal-close:hover { background: var(--red-dim); color: var(--red); border-color: var(--red); }
+
+.modal-body { padding: 18px 22px; overflow-y: auto; flex: 1; }
+.modal-foot {
+  padding: 14px 22px; border-top: 1px solid var(--border);
+  display: flex; gap: 10px; justify-content: flex-end;
+}
+
+/* Group form */
+.group-form { margin-bottom: 22px; }
+.group-form-title {
+  font-size: .8rem; font-weight: 700; color: var(--cyan);
+  text-transform: uppercase; letter-spacing: .5px; margin-bottom: 12px;
+  display: flex; align-items: center; gap: 6px;
+}
+.group-name-input {
+  width: 100%; background: var(--surface2); border: 1px solid var(--border);
+  color: var(--text); padding: 10px 14px; border-radius: 10px;
+  font-size: .88rem; outline: none; margin-bottom: 12px;
+  transition: border-color .2s, box-shadow .2s;
+}
+.group-name-input:focus { border-color: var(--cyan); box-shadow: 0 0 0 3px var(--cyan-dim); }
+
+.sku-checklist { display: flex; flex-direction: column; gap: 7px; max-height: 220px; overflow-y: auto; }
+.sku-check-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 9px 12px; border-radius: 9px;
+  background: var(--surface2); border: 1px solid var(--border);
+  cursor: pointer; transition: border-color .15s;
+}
+.sku-check-row:hover { border-color: var(--cyan); }
+.sku-check-row input[type="checkbox"] { accent-color: var(--cyan); width: 15px; height: 15px; cursor: pointer; }
+.sku-check-name { font-size: .8rem; flex: 1; }
+.sku-check-sku  { font-size: .7rem; color: var(--text3); font-family: var(--font-en); }
+.sku-check-stock { font-size: .75rem; font-family: var(--font-en); font-weight: 700; color: var(--cyan); }
+
+/* Existing groups list */
+.groups-list { display: flex; flex-direction: column; gap: 8px; }
+.group-item {
+  background: var(--surface2); border: 1px solid var(--border);
+  border-radius: 10px; padding: 11px 14px;
+  display: flex; align-items: center; gap: 10px;
+}
+.group-item-name { font-size: .85rem; font-weight: 700; flex: 1; }
+.group-item-skus { font-size: .72rem; color: var(--text3); font-family: var(--font-en); }
+.group-del {
+  background: var(--red-dim); border: 1px solid rgba(248,113,113,0.2);
+  color: var(--red); padding: 4px 10px; border-radius: 7px;
+  cursor: pointer; font-size: .75rem; font-weight: 700;
+  transition: all .2s;
+}
+.group-del:hover { background: var(--red); color: #fff; }
+
+/* Modal btn */
+.modal-btn {
+  padding: 9px 20px; border-radius: 9px; font-size: .84rem;
+  font-weight: 700; cursor: pointer; border: none; font-family: var(--font-ar);
+  transition: all .2s;
+}
+.modal-btn-primary {
+  background: linear-gradient(135deg, var(--cyan), var(--violet));
+  color: #fff; box-shadow: var(--glow-c);
+}
+.modal-btn-primary:hover { transform: translateY(-1px); box-shadow: 0 0 24px var(--cyan-glow); }
+.modal-btn-ghost {
+  background: var(--surface2); color: var(--text2);
+  border: 1px solid var(--border);
+}
+.modal-btn-ghost:hover { border-color: var(--cyan); color: var(--cyan); }
+
+/* Override input inside country card */
+.override-wrap {
+  display: flex; align-items: center; gap: 5px; margin-top: 6px;
+  padding: 6px 10px; border-radius: 8px;
+  background: var(--surface3); border: 1px solid var(--border);
+  transition: border-color .2s;
+}
+.override-wrap:focus-within { border-color: var(--cyan); }
+.override-input {
+  width: 56px; background: transparent; border: none;
+  color: var(--text2); font-family: var(--font-en); font-size: .82rem; font-weight: 700;
+  outline: none; text-align: center; padding: 0;
+}
+.override-input.is-manual { color: var(--cyan); }
+.override-label { font-size: .68rem; color: var(--text3); flex: 1; }
+.override-reset {
+  background: none; border: none; cursor: pointer;
+  color: var(--text3); font-size: .75rem; padding: 0 2px;
+  transition: color .15s; display: none;
+}
+.override-reset.visible { display: inline; }
+.override-reset:hover { color: var(--red); }
+
+/* 30d accuracy badge */
+.accuracy-bar {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  background: var(--surface2); border: 1px solid var(--border);
+  border-radius: 10px; padding: 10px 16px; margin-bottom: 16px;
+  font-size: .78rem;
+}
+.accuracy-pill {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 3px 10px; border-radius: 8px; font-family: var(--font-en); font-weight: 600;
+  font-size: .74rem;
+}
+.acc-green  { background: var(--green-dim);  color: var(--green); }
+.acc-yellow { background: var(--yellow-dim); color: var(--yellow); }
+.acc-cyan   { background: var(--cyan-dim);   color: var(--cyan);  }
+
+/* ═══════════════════════════════════════════
+   WEBHOOK LOG
+═══════════════════════════════════════════ */
+.wh-log { display: flex; flex-direction: column; gap: 8px; max-height: 340px; overflow-y: auto; }
+.wh-entry {
+  background: var(--surface2); border: 1px solid var(--border);
+  border-radius: 10px; padding: 10px 14px;
+  display: flex; align-items: center; gap: 12px;
+  animation: slide-in .3s ease;
+  font-size: .78rem;
+}
+.wh-ts    { color: var(--text3); font-family: var(--font-en); flex-shrink: 0; }
+.wh-id    { color: var(--cyan);  font-family: var(--font-en); font-weight: 700; flex-shrink: 0; }
+.wh-info  { flex: 1; color: var(--text2); }
+.wh-action { font-weight: 700; }
+
+/* ═══════════════════════════════════════════
+   PROFIT MINI CARDS
+═══════════════════════════════════════════ */
+.profit-band {
+  background: var(--surface2); border: 1px solid var(--border);
+  border-radius: 12px; padding: 14px 16px;
+  display: flex; flex-direction: column; gap: 4px;
+}
+.profit-band-label { font-size: .72rem; color: var(--text3); text-transform: uppercase; letter-spacing: .5px; }
+.profit-band-val   { font-size: 1.5rem; font-weight: 800; font-family: var(--font-en); }
+.profit-bands { display: flex; gap: 12px; margin-bottom: 18px; flex-wrap: wrap; }
+.profit-bands .profit-band { flex: 1; min-width: 120px; }
+
+/* ═══════════════════════════════════════════
+   EMPTY / ERROR / LOADING
+═══════════════════════════════════════════ */
+.empty-row td {
+  text-align: center; padding: 40px !important;
+  color: var(--text3); font-size: .84rem;
+}
+.err-box {
+  background: var(--red-dim); border: 1px solid rgba(248,113,113,0.2);
+  color: var(--red); padding: 14px 18px; border-radius: 10px;
+  font-size: .84rem; font-family: var(--font-en);
+}
+.skeleton {
+  background: linear-gradient(90deg, var(--surface2) 25%, var(--surface3) 50%, var(--surface2) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.4s ease-in-out infinite;
+  border-radius: 6px;
+}
+
+/* ═══════════════════════════════════════════
+   TRACKING STATUS CHIP
+═══════════════════════════════════════════ */
+.track-chip {
+  font-size: .7rem; font-family: var(--font-en); font-weight: 600;
+  color: var(--cyan); background: var(--cyan-dim);
+  padding: 2px 8px; border-radius: 6px;
+  border: 1px solid rgba(56,189,248,0.15);
+}
+</style>
+</head>
+<body>
+
+<!-- ═══════════ LOGIN PAGE ═══════════ -->
+<div id="loginPage">
+  <div class="login-card">
+    <div class="login-logo">
+      <div class="login-logo-icon">📦</div>
+      <div>
+        <div class="login-logo-text">CODNETWORK</div>
+        <div class="login-logo-sub">Seller Dashboard</div>
+      </div>
+    </div>
+
+    <div class="login-heading">Connect your account</div>
+    <div class="login-sub">Enter your CODNETWORK API token to access your dashboard. Your credentials are stored only in your browser.</div>
+
+    <div class="login-field">
+      <label class="login-label" for="loginToken">API Token</label>
+      <input class="login-input" id="loginToken" type="password"
+        placeholder="eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9…"
+        autocomplete="off" onkeydown="if(event.key==='Enter') doLogin()">
+      <div class="login-hint">
+        Get your token from <a href="https://seller.cod.network/client/generate-access-token" target="_blank">CODNETWORK → Settings → API Token</a>
+      </div>
+    </div>
+
+    <div class="login-field">
+      <label class="login-label" for="loginSecret">Webhook Secret <span style="color:var(--text3);font-weight:400;text-transform:none;letter-spacing:0">(optional)</span></label>
+      <input class="login-input" id="loginSecret" type="password"
+        placeholder="c02f99d51cdfb850…"
+        autocomplete="off" onkeydown="if(event.key==='Enter') doLogin()">
+      <div class="login-hint">
+        Required to receive real-time webhook events. Leave blank to skip.
+      </div>
+    </div>
+
+    <button class="login-btn" id="loginBtn" onclick="doLogin()">
+      Connect to Dashboard →
+    </button>
+
+    <div class="login-error" id="loginError"></div>
+
+    <div class="login-secure">
+      🔒 Credentials stored locally in your browser only
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════ LOADING OVERLAY ═══════════ -->
+<div id="overlay">
+  <div class="overlay-logo">📦</div>
+  <div class="overlay-spin"></div>
+  <div class="overlay-text">Loading CODNETWORK Data…</div>
+  <div class="overlay-sub" id="overlayMsg">Connecting to API…</div>
+</div>
+
+<!-- ═══════════ HEADER ═══════════ -->
+<header>
+  <div class="hd">
+    <a class="logo" href="#">
+      <div class="logo-icon">📦</div>
+      <div>
+        <div class="logo-name">CODNETWORK</div>
+        <div class="logo-sub">Seller Dashboard</div>
+      </div>
+    </a>
+
+    <div class="hd-right">
+      <span class="webhook-badge" id="wh-badge">⚡ Webhook Active</span>
+      <div class="badge-live"><div class="dot-live"></div>LIVE</div>
+      <span class="refresh-ts" id="refreshTs"></span>
+      <span class="refresh-ts" id="tokenHint" style="color:var(--cyan);font-size:.72rem"></span>
+      <button class="hd-btn" id="refreshBtn" onclick="refreshAll()">🔄 Refresh</button>
+      <button class="hd-btn" onclick="doLogout()" style="border-color:rgba(248,113,113,.3);color:var(--red)" title="Sign out">⏏ Logout</button>
+      <div class="theme-toggle" id="themeToggle" onclick="toggleTheme()" title="Toggle theme"></div>
+    </div>
+  </div>
+</header>
+
+<!-- ═══════════ TABS ═══════════ -->
+<div class="tabs-bar">
+  <div class="tabs-inner">
+    <button class="tab active" data-tab="overview" onclick="showTab('overview')">
+      📊 Overview
+    </button>
+    <button class="tab" data-tab="orders" onclick="showTab('orders')">
+      📋 Orders <span class="tab-count" id="tc-orders">—</span>
+    </button>
+    <button class="tab" data-tab="shipments" onclick="showTab('shipments')">
+      🚚 Shipments
+    </button>
+    <button class="tab" data-tab="inventory" onclick="showTab('inventory')">
+      🏭 Inventory
+    </button>
+    <button class="tab" data-tab="profits" onclick="showTab('profits')">
+      💰 Profits
+    </button>
+    <button class="tab" data-tab="webhook" onclick="showTab('webhook')">
+      ⚡ Webhook Log
+    </button>
+  </div>
+</div>
+
+<main>
+
+<!-- ══════════════════════════════════════════
+     PAGE: OVERVIEW
+══════════════════════════════════════════ -->
+<div class="page active" id="page-overview">
+
+  <!-- KPI Row -->
+  <div class="grid-4 fade-up">
+    <div class="kpi" style="--kpi-color:var(--cyan);--kpi-glow:var(--cyan-dim)">
+      <div class="kpi-icon">📦</div>
+      <div class="kpi-label">Total Orders</div>
+      <div class="kpi-value" id="k-total">—</div>
+      <div class="kpi-sub" id="k-sampled">Analyzed sample</div>
+    </div>
+    <div class="kpi" style="--kpi-color:var(--green);--kpi-glow:var(--green-dim)">
+      <div class="kpi-icon">💵</div>
+      <div class="kpi-label">Today Revenue</div>
+      <div class="kpi-value" id="k-today">—</div>
+      <div class="kpi-sub">USD · today only</div>
+    </div>
+    <div class="kpi" style="--kpi-color:var(--yellow);--kpi-glow:var(--yellow-dim)">
+      <div class="kpi-icon">📅</div>
+      <div class="kpi-label">Monthly Revenue</div>
+      <div class="kpi-value" id="k-month">—</div>
+      <div class="kpi-sub">USD · current month</div>
+    </div>
+    <div class="kpi" style="--kpi-color:var(--violet);--kpi-glow:var(--violet-dim)">
+      <div class="kpi-icon">🌍</div>
+      <div class="kpi-label">Sample Revenue</div>
+      <div class="kpi-value" id="k-rev">—</div>
+      <div class="kpi-sub">USD · from sample</div>
+    </div>
+  </div>
+
+  <!-- Status + Country -->
+  <div class="grid-2 fade-up">
+    <div class="panel">
+      <div class="panel-head">
+        <div class="panel-title">📊 Orders by Status</div>
+        <div class="panel-badge" id="status-badge">from sample</div>
+      </div>
+      <div class="panel-body">
+        <div class="status-list" id="statusList">
+          <div class="skeleton" style="height:10px;margin:6px 0"></div>
+          <div class="skeleton" style="height:10px;margin:6px 0;width:80%"></div>
+          <div class="skeleton" style="height:10px;margin:6px 0;width:60%"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head">
+        <div class="panel-title">🌍 Orders by Country</div>
+      </div>
+      <div class="panel-body">
+        <div class="chart-wrap-sm"><canvas id="countryChart"></canvas></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Daily Revenue Chart -->
+  <div class="panel mb fade-up">
+    <div class="panel-head">
+      <div class="panel-title panel-title-en">📈 Daily Revenue · Last 30 Days (USD)</div>
+    </div>
+    <div class="panel-body">
+      <div class="chart-wrap"><canvas id="dailyChart"></canvas></div>
+    </div>
+  </div>
+
+  <!-- Shipment Quick Stats -->
+  <div class="grid-3 fade-up">
+    <div class="kpi" style="--kpi-color:var(--cyan);--kpi-glow:var(--cyan-dim)">
+      <div class="kpi-icon">🚚</div>
+      <div class="kpi-label">Tracked Shipments</div>
+      <div class="kpi-value" id="k-tracked">—</div>
+      <div class="kpi-sub">with tracking number</div>
+    </div>
+    <div class="kpi" style="--kpi-color:var(--green);--kpi-glow:var(--green-dim)">
+      <div class="kpi-icon">✅</div>
+      <div class="kpi-label">Delivered</div>
+      <div class="kpi-value" id="k-delivered">—</div>
+      <div class="kpi-sub">in sample</div>
+    </div>
+    <div class="kpi" style="--kpi-color:var(--orange);--kpi-glow:var(--orange-dim)">
+      <div class="kpi-icon">↩️</div>
+      <div class="kpi-label">Returned</div>
+      <div class="kpi-value" id="k-returned">—</div>
+      <div class="kpi-sub">in sample</div>
+    </div>
+  </div>
+
+</div><!-- /overview -->
+
+<!-- ══════════════════════════════════════════
+     PAGE: ORDERS
+══════════════════════════════════════════ -->
+<div class="page" id="page-orders">
+  <div class="search-wrap">
+    <input class="search-input" id="orderSearch" placeholder="Search by reference or customer name…" oninput="debounceSearch()">
+    <button class="hd-btn" onclick="loadOrders(1)">🔍 Search</button>
+  </div>
+  <div class="panel">
+    <div class="panel-head">
+      <div class="panel-title">📋 All Orders</div>
+      <span class="refresh-ts panel-title-en" id="orders-info"></span>
+    </div>
+    <div class="tbl-wrap">
+      <table>
+        <thead><tr>
+          <th>Reference</th><th>Customer</th><th>City</th><th>Country</th>
+          <th>Product</th><th>Total USD</th><th>Status</th><th>Date</th>
+        </tr></thead>
+        <tbody id="ordersBody">
+          <tr class="empty-row"><td colspan="8">Loading…</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="pagination" id="ordersPagination"></div>
+  </div>
+</div><!-- /orders -->
+
+<!-- ══════════════════════════════════════════
+     PAGE: SHIPMENTS
+══════════════════════════════════════════ -->
+<div class="page" id="page-shipments">
+  <div class="panel">
+    <div class="panel-head">
+      <div class="panel-title">🚚 Tracked Shipments</div>
+      <span class="refresh-ts panel-title-en" id="ship-info"></span>
+    </div>
+    <div class="tbl-wrap">
+      <table>
+        <thead><tr>
+          <th>Reference</th><th>Customer</th><th>Country</th>
+          <th>Tracking #</th><th>Tracking Status</th><th>Order Status</th>
+          <th>Shipped At</th><th>USD</th>
+        </tr></thead>
+        <tbody id="shipmentsBody">
+          <tr class="empty-row"><td colspan="8">Loading…</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div><!-- /shipments -->
+
+<!-- ══════════════════════════════════════════
+     PAGE: INVENTORY
+══════════════════════════════════════════ -->
+<div class="page" id="page-inventory">
+
+  <!-- Accuracy bar -->
+  <div class="accuracy-bar" id="accuracyBar" style="display:none">
+    <span style="color:var(--text2);font-weight:600">📊 Daily average based on:</span>
+    <span class="accuracy-pill acc-green" id="acc-orders">— orders</span>
+    <span class="accuracy-pill acc-cyan"  id="acc-window">last 30 days</span>
+    <span class="accuracy-pill acc-cyan"  id="acc-cutoff"></span>
+    <span style="color:var(--text3);margin-left:auto;font-size:.72rem" id="acc-fetched"></span>
+  </div>
+
+  <!-- Shipping days editor -->
+  <div class="ship-config" id="shipConfigPanel">
+    <div class="ship-config-head">
+      <div class="ship-config-title">⚙️ Shipping Days per Country</div>
+      <button class="hd-btn" onclick="openGroupModal()" style="font-size:.78rem;padding:6px 14px">
+        📦 Manage Groups
+      </button>
+    </div>
+    <div class="ship-countries" id="shipCountries"></div>
+  </div>
+
+  <!-- Summary KPIs -->
+  <div class="grid-3 mb">
+    <div class="kpi" style="--kpi-color:var(--cyan);--kpi-glow:var(--cyan-dim)">
+      <div class="kpi-icon">📦</div>
+      <div class="kpi-label">Total Stock Units</div>
+      <div class="kpi-value" id="inv-total-stock">—</div>
+      <div class="kpi-sub">across all warehouses</div>
+    </div>
+    <div class="kpi" style="--kpi-color:var(--red);--kpi-glow:var(--red-dim)">
+      <div class="kpi-icon">🔴</div>
+      <div class="kpi-label">Critical</div>
+      <div class="kpi-value" id="inv-critical">—</div>
+      <div class="kpi-sub">below shipping lead time</div>
+    </div>
+    <div class="kpi" style="--kpi-color:var(--yellow);--kpi-glow:var(--yellow-dim)">
+      <div class="kpi-icon">⚠️</div>
+      <div class="kpi-label">Warning</div>
+      <div class="kpi-value" id="inv-warning">—</div>
+      <div class="kpi-sub">within +15 day buffer</div>
+    </div>
+  </div>
+
+  <!-- Product groups rendered here -->
+  <div id="inventoryGroups">
+    <div style="text-align:center;padding:40px;color:var(--text3)">Loading inventory…</div>
+  </div>
+
+</div><!-- /inventory -->
+
+<!-- ══════════════════════════════════════════
+     MANAGE GROUPS MODAL
+══════════════════════════════════════════ -->
+<div class="modal-overlay" id="groupModal" onclick="closeGroupModal(event)">
+  <div class="modal-box" onclick="event.stopPropagation()">
+    <div class="modal-head">
+      <span>📦 Manage SKU Groups</span>
+      <button class="modal-close" onclick="closeGroupModal()">✕</button>
+    </div>
+    <div class="modal-body">
+
+      <!-- Create new group -->
+      <div class="group-form">
+        <div class="group-form-title">➕ Create new group</div>
+        <input class="group-name-input" id="newGroupName" placeholder="Group name (e.g. Hair Stamp Pen)…" maxlength="60">
+        <div style="font-size:.74rem;color:var(--text3);margin-bottom:8px">Select SKUs to include:</div>
+        <div class="sku-checklist" id="skuChecklist"><!-- filled by JS --></div>
+      </div>
+
+      <!-- Existing groups -->
+      <div id="existingGroupsSection" style="display:none">
+        <div class="group-form-title" style="color:var(--violet)">📋 Saved groups</div>
+        <div class="groups-list" id="existingGroupsList"></div>
+      </div>
+
+    </div>
+    <div class="modal-foot">
+      <button class="modal-btn modal-btn-ghost" onclick="closeGroupModal()">Cancel</button>
+      <button class="modal-btn modal-btn-primary" onclick="saveNewGroup()">Save Group</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════
+     PAGE: PROFITS
+══════════════════════════════════════════ -->
+<div class="page" id="page-profits">
+  <!-- Revenue bands -->
+  <div class="profit-bands fade-up">
+    <div class="profit-band">
+      <div class="profit-band-label">💵 Today</div>
+      <div class="profit-band-val" id="p-today" style="color:var(--green)">—</div>
+      <div style="font-size:.7rem;color:var(--text3)">USD</div>
+    </div>
+    <div class="profit-band">
+      <div class="profit-band-label">📅 This Month</div>
+      <div class="profit-band-val" id="p-month" style="color:var(--cyan)">—</div>
+      <div style="font-size:.7rem;color:var(--text3)">USD</div>
+    </div>
+    <div class="profit-band">
+      <div class="profit-band-label">📊 Sample Total</div>
+      <div class="profit-band-val" id="p-total" style="color:var(--violet)">—</div>
+      <div style="font-size:.7rem;color:var(--text3)">USD · from <span id="p-sampled">—</span> orders</div>
+    </div>
+  </div>
+
+  <!-- Daily chart -->
+  <div class="panel mb fade-up">
+    <div class="panel-head">
+      <div class="panel-title panel-title-en">📈 Daily Revenue · Last 30 Days</div>
+    </div>
+    <div class="panel-body">
+      <div class="chart-wrap"><canvas id="dailyChart2"></canvas></div>
+    </div>
+  </div>
+
+  <!-- Monthly chart -->
+  <div class="panel fade-up">
+    <div class="panel-head">
+      <div class="panel-title panel-title-en">📊 Monthly Revenue · Last 12 Months</div>
+    </div>
+    <div class="panel-body">
+      <div class="chart-wrap"><canvas id="monthlyChart"></canvas></div>
+    </div>
+  </div>
+</div><!-- /profits -->
+
+<!-- ══════════════════════════════════════════
+     PAGE: WEBHOOK LOG
+══════════════════════════════════════════ -->
+<div class="page" id="page-webhook">
+  <div class="grid-2 fade-up">
+    <div class="panel">
+      <div class="panel-head">
+        <div class="panel-title">⚡ Webhook Event Log</div>
+        <div class="panel-badge">Last 50 events</div>
+      </div>
+      <div class="panel-body-sm">
+        <div class="wh-log" id="whLog">
+          <div style="text-align:center;padding:20px;color:var(--text3);font-size:.82rem">
+            No webhook events received yet.<br>Events will appear here in real-time.
+          </div>
+        </div>
+      </div>
+    </div>
+    <div>
+      <div class="panel mb">
+        <div class="panel-head">
+          <div class="panel-title">🔗 Webhook Configuration</div>
+        </div>
+        <div class="panel-body">
+          <div style="display:flex;flex-direction:column;gap:12px;font-size:.81rem">
+            <div>
+              <div style="color:var(--text3);font-size:.7rem;margin-bottom:4px;text-transform:uppercase;letter-spacing:.5px">Lead Status URL</div>
+              <div class="td-mono" style="color:var(--cyan);word-break:break-all">https://jolly-sorbet-6b00bb.netlify.app/.netlify/functions/cod-webhook</div>
+            </div>
+            <div>
+              <div style="color:var(--text3);font-size:.7rem;margin-bottom:4px;text-transform:uppercase;letter-spacing:.5px">Order Status URL</div>
+              <div class="td-mono" style="color:var(--cyan);word-break:break-all">https://jolly-sorbet-6b00bb.netlify.app/.netlify/functions/cod-webhook</div>
+            </div>
+            <div>
+              <div style="color:var(--text3);font-size:.7rem;margin-bottom:4px;text-transform:uppercase;letter-spacing:.5px">Local Webhook Endpoint</div>
+              <div class="td-mono" style="color:var(--violet)">POST /webhook</div>
+            </div>
+            <div>
+              <div style="color:var(--text3);font-size:.7rem;margin-bottom:4px;text-transform:uppercase;letter-spacing:.5px">Inventory Logic</div>
+              <div style="color:var(--text2)">
+                <span style="color:var(--red)">●</span> Confirmed / Shipped / Delivered → subtract qty<br>
+                <span style="color:var(--green)">●</span> Returned → add qty back
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="panel-head">
+          <div class="panel-title">📦 Inventory Deltas (Live)</div>
+        </div>
+        <div class="panel-body-sm">
+          <div id="deltaList" style="font-family:var(--font-en);font-size:.8rem;color:var(--text2)">
+            No changes yet.
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div><!-- /webhook -->
+
+</main>
+
+<!-- ═══════════════════════════════════════════
+     JAVASCRIPT
+═══════════════════════════════════════════ -->
+<script>
+'use strict';
+
+// ═══════════════════════════════════════════════════════════════
+//  AUTH — token stored in localStorage
+// ═══════════════════════════════════════════════════════════════
+let _token  = localStorage.getItem('cod_token')  || '';
+let _secret = localStorage.getItem('cod_secret') || '';
+
+// Attach auth header to every dashboard fetch
+function apiFetch(path, opts = {}) {
+  if (!_token) { doLogout(); return Promise.reject(new Error('Not authenticated')); }
+  const headers = { ...(opts.headers||{}), 'Authorization': `Bearer ${_token}` };
+  return fetch(path, { ...opts, headers });
+}
+
+// Show login page if no token
+function checkAuth() {
+  if (!_token) {
+    document.getElementById('loginPage').classList.remove('hidden');
+    document.getElementById('overlay').classList.add('gone');
+  } else {
+    document.getElementById('loginPage').classList.add('hidden');
+    showTokenHint();
+  }
+}
+
+function showTokenHint() {
+  const el = document.getElementById('tokenHint');
+  if (el && _token) el.textContent = '…' + _token.slice(-8);
+}
+
+async function doLogin() {
+  const token  = document.getElementById('loginToken').value.trim();
+  const secret = document.getElementById('loginSecret').value.trim();
+  const btn    = document.getElementById('loginBtn');
+  const errEl  = document.getElementById('loginError');
+
+  if (!token) { showLoginErr('Please enter your API token'); return; }
+
+  btn.disabled = true; btn.textContent = 'Verifying…';
+  errEl.classList.remove('visible');
+
+  try {
+    const r = await fetch('/api/verify-token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token, webhookSecret: secret || null }),
+    });
+    const data = await r.json();
+    if (data.ok) {
+      _token  = token;
+      _secret = secret;
+      localStorage.setItem('cod_token',  token);
+      if (secret) localStorage.setItem('cod_secret', secret);
+      document.getElementById('loginPage').classList.add('hidden');
+      showTokenHint();
+      loadStats();   // kick off the main data load
+    } else {
+      showLoginErr(data.error || 'Invalid token — check your CODNETWORK API credentials');
+    }
+  } catch (e) {
+    showLoginErr('Connection error: ' + e.message);
+  } finally {
+    btn.disabled = false; btn.textContent = 'Connect to Dashboard →';
+  }
+}
+
+function showLoginErr(msg) {
+  const el = document.getElementById('loginError');
+  el.textContent = msg; el.classList.add('visible');
+}
+
+function doLogout() {
+  _token = ''; _secret = '';
+  localStorage.removeItem('cod_token');
+  localStorage.removeItem('cod_secret');
+  // Reset all cached state
+  statsData = null;
+  Object.keys(charts).forEach(k => { try { charts[k].destroy(); } catch {} delete charts[k]; });
+  Object.keys(tabLoaded).forEach(k => { tabLoaded[k] = false; });
+  document.getElementById('loginToken').value  = '';
+  document.getElementById('loginSecret').value = '';
+  document.getElementById('loginError').classList.remove('visible');
+  document.getElementById('loginPage').classList.remove('hidden');
+  document.getElementById('overlay').classList.add('gone');
+}
+
+// ── Theme ──────────────────────────────────────────────────────────────────
+const stored = localStorage.getItem('theme');
+if (stored === 'light') document.documentElement.classList.add('light');
+
+function toggleTheme() {
+  const isLight = document.documentElement.classList.toggle('light');
+  localStorage.setItem('theme', isLight ? 'light' : 'dark');
+  Object.values(charts).forEach(c => c && c.update && c.update());
+}
+
+// ── Number formatting (always English/Western digits) ─────────────────────
+function en(n, dec = 0) {
+  if (n === null || n === undefined || n === '—') return '—';
+  return Number(n).toLocaleString('en-US', {
+    minimumFractionDigits: dec,
+    maximumFractionDigits: dec,
+  });
+}
+function usd(n)   { return '$' + en(n, 2); }
+function num(n)   { return en(n, 0); }
+
+// ── Status badge HTML ─────────────────────────────────────────────────────
+const STATUS_CLS = {
+  New: 's-new', Assigned: 's-assigned', Processing: 's-processing',
+  Pending: 's-pending', Shipped: 's-shipped', Delivered: 's-delivered',
+  Cancelled: 's-cancelled', Returned: 's-returned', Return: 's-returned',
+  Cancel: 's-cancelled',
+};
+const STATUS_COLORS = {
+  New: '#34d399', Assigned: '#38bdf8', Processing: '#fbbf24',
+  Pending: '#fb923c', Shipped: '#a78bfa', Delivered: '#34d399',
+  Cancelled: '#f87171', Returned: '#fb923c', Return: '#fb923c',
+  Cancel: '#f87171', 'Out of stock': '#f87171',
+};
+
+function badge(s) {
+  const cls = STATUS_CLS[s] || 's-default';
+  return `<span class="badge ${cls}">${s || '—'}</span>`;
+}
+
+function fmtDate(d) {
+  if (!d) return '—';
+  try {
+    return new Date(d).toLocaleDateString('en-US', { year:'numeric', month:'short', day:'numeric' });
+  } catch { return d.slice(0,10); }
+}
+
+// ── Chart registry ────────────────────────────────────────────────────────
+const charts = {};
+function destroyChart(id) {
+  if (charts[id]) { try { charts[id].destroy(); } catch {} delete charts[id]; }
+}
+
+const CHART_DEFAULTS = {
+  color: '#94a3b8',
+  grid: 'rgba(255,255,255,0.05)',
+};
+function lightAwareGrid() {
+  return document.documentElement.classList.contains('light')
+    ? 'rgba(0,0,0,0.07)' : 'rgba(255,255,255,0.05)';
+}
+function lightAwareText() {
+  return document.documentElement.classList.contains('light') ? '#475569' : '#94a3b8';
+}
+
+function makeLineChart(id, labels, data, label, color) {
+  destroyChart(id);
+  const el = document.getElementById(id);
+  if (!el) return;
+  const ctx = el.getContext('2d');
+  const gradient = ctx.createLinearGradient(0, 0, 0, 260);
+  gradient.addColorStop(0, color + '55');
+  gradient.addColorStop(1, color + '00');
+  charts[id] = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [{
+        label, data,
+        borderColor: color, backgroundColor: gradient,
+        borderWidth: 2.5, pointRadius: 3, pointBackgroundColor: color,
+        fill: true, tension: 0.4,
+      }],
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { labels: { color: lightAwareText(), font: { family: "'Inter'" } } },
+        tooltip: { callbacks: { label: c => ` $${en(c.parsed.y, 2)}` } },
+      },
+      scales: {
+        x: { ticks: { color: lightAwareText(), font: { size: 11, family: "'Inter'" } }, grid: { color: lightAwareGrid() } },
+        y: { ticks: { color: lightAwareText(), font: { size: 11, family: "'Inter'" }, callback: v => '$'+en(v,0) }, grid: { color: lightAwareGrid() } },
+      },
+    },
+  });
+}
+
+function makeBarChart(id, labels, data, label, color) {
+  destroyChart(id);
+  const el = document.getElementById(id);
+  if (!el) return;
+  charts[id] = new Chart(el.getContext('2d'), {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [{
+        label, data,
+        backgroundColor: color + 'aa',
+        borderColor: color,
+        borderWidth: 1, borderRadius: 6, borderSkipped: false,
+      }],
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { labels: { color: lightAwareText(), font: { family: "'Inter'" } } },
+        tooltip: { callbacks: { label: c => ` $${en(c.parsed.y, 2)}` } },
+      },
+      scales: {
+        x: { ticks: { color: lightAwareText(), font: { size: 11, family: "'Inter'" } }, grid: { color: lightAwareGrid() } },
+        y: { ticks: { color: lightAwareText(), font: { size: 11, family: "'Inter'" }, callback: v => '$'+en(v,0) }, grid: { color: lightAwareGrid() } },
+      },
+    },
+  });
+}
+
+function makeDoughnut(id, labels, data, colors) {
+  destroyChart(id);
+  const el = document.getElementById(id);
+  if (!el) return;
+  charts[id] = new Chart(el.getContext('2d'), {
+    type: 'doughnut',
+    data: { labels, datasets: [{ data, backgroundColor: colors, borderWidth: 2, borderColor: 'transparent', hoverBorderColor: 'transparent' }] },
+    options: {
+      responsive: true, maintainAspectRatio: false, cutout: '68%',
+      plugins: {
+        legend: { position: 'right', labels: { color: lightAwareText(), font: { size: 11, family: "'Inter'" }, padding: 12, usePointStyle: true } },
+        tooltip: { callbacks: { label: c => ` ${c.label}: ${en(c.parsed)} orders` } },
+      },
+    },
+  });
+}
+
+// ── Stats data ────────────────────────────────────────────────────────────
+let statsData = null;
+
+async function loadStats() {
+  try {
+    document.getElementById('overlayMsg').textContent = 'Fetching order statistics…';
+    const r = await apiFetch('/api/stats');
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    statsData = await r.json();
+    renderOverview();
+    renderProfits();
+    document.getElementById('refreshTs').textContent = 'Updated ' + new Date().toLocaleTimeString('en-US');
+    document.getElementById('tc-orders').textContent = num(statsData.totalOrders);
+  } catch (e) {
+    document.getElementById('page-overview').innerHTML =
+      `<div class="err-box">Failed to load: ${e.message}</div>`;
+  } finally {
+    setTimeout(() => {
+      document.getElementById('overlay').classList.add('gone');
+    }, 400);
+  }
+}
+
+function renderOverview() {
+  if (!statsData) return;
+  // KPIs
+  animateNum('k-total',   statsData.totalOrders);
+  animateNum('k-today',   statsData.todayRevenue,  true);
+  animateNum('k-month',   statsData.monthRevenue,  true);
+  animateNum('k-rev',     statsData.sampleTotal,   true);
+  animateNum('k-tracked', statsData.tracked);
+  animateNum('k-delivered', statsData.delivered);
+  animateNum('k-returned',  statsData.returned);
+  document.getElementById('k-sampled').textContent = `${en(statsData.sampledOrders)} orders analyzed`;
+
+  // Status bars
+  const sc = statsData.statusCount;
+  const entries = Object.entries(sc).sort((a,b) => b[1]-a[1]);
+  const maxV = entries[0]?.[1] || 1;
+  document.getElementById('statusList').innerHTML = entries.map(([name, count]) => {
+    const pct = Math.round(count/maxV*100);
+    const col = STATUS_COLORS[name] || '#8888aa';
+    return `<div class="status-row">
+      <div class="status-name">${name}</div>
+      <div class="bar-track"><div class="bar-fill" style="width:0%;background:${col}" data-w="${pct}"></div></div>
+      <div class="status-num" style="color:${col}">${en(count)}</div>
+    </div>`;
+  }).join('');
+  document.getElementById('status-badge').textContent = `${en(statsData.sampledOrders)} sampled`;
+  // Animate bars
+  requestAnimationFrame(() => {
+    document.querySelectorAll('.bar-fill').forEach(el => {
+      el.style.width = el.dataset.w + '%';
+    });
+  });
+
+  // Country doughnut
+  const cc = statsData.statusCount; // reuse for demo; actually use countryCount if available
+  // We need country from stats — server sends statusCount. Build donut from status.
+  const PALETTE = ['#38bdf8','#34d399','#fbbf24','#f87171','#a78bfa','#fb923c','#f472b6','#22d3ee'];
+  makeDoughnut('countryChart',
+    entries.slice(0,8).map(e => e[0]),
+    entries.slice(0,8).map(e => e[1]),
+    PALETTE
+  );
+
+  // Daily line
+  const dl = statsData.dailyChart;
+  makeLineChart('dailyChart', dl.map(d=>d.label), dl.map(d=>d.rev), 'Revenue (USD)', '#38bdf8');
+}
+
+function renderProfits() {
+  if (!statsData) return;
+  document.getElementById('p-today').textContent   = usd(statsData.todayRevenue);
+  document.getElementById('p-month').textContent   = usd(statsData.monthRevenue);
+  document.getElementById('p-total').textContent   = usd(statsData.sampleTotal);
+  document.getElementById('p-sampled').textContent = en(statsData.sampledOrders);
+  const dl = statsData.dailyChart;
+  makeLineChart('dailyChart2', dl.map(d=>d.label), dl.map(d=>d.rev), 'Daily Revenue (USD)', '#34d399');
+  const ml = statsData.monthlyChart;
+  makeBarChart('monthlyChart', ml.map(d=>d.label), ml.map(d=>d.rev), 'Monthly Revenue (USD)', '#a78bfa');
+}
+
+// ── Animated number ───────────────────────────────────────────────────────
+function animateNum(id, target, isUSD = false) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  const start = 0, dur = 900;
+  const t0 = performance.now();
+  const tick = (now) => {
+    const p = Math.min((now - t0) / dur, 1);
+    const ease = 1 - Math.pow(1 - p, 3);
+    const val = start + (target - start) * ease;
+    el.textContent = isUSD ? usd(val) : num(val);
+    if (p < 1) requestAnimationFrame(tick);
+    else el.textContent = isUSD ? usd(target) : num(target);
+  };
+  requestAnimationFrame(tick);
+}
+
+// ── Tab navigation ────────────────────────────────────────────────────────
+let activeTab = 'overview';
+const tabLoaded = { overview: false };
+
+function showTab(name) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.getElementById('page-' + name).classList.add('active');
+  document.querySelector(`[data-tab="${name}"]`).classList.add('active');
+  activeTab = name;
+
+  if (!tabLoaded[name]) {
+    tabLoaded[name] = true;
+    if (name === 'orders')    loadOrders(1);
+    if (name === 'shipments') loadShipments();
+    if (name === 'inventory') loadInventory();
+    if (name === 'profits')   renderProfits();
+    if (name === 'webhook')   loadWebhookLog();
+  } else {
+    if (name === 'profits') {
+      renderProfits(); // re-render charts on tab revisit
+    }
+  }
+}
+
+// ── Orders ────────────────────────────────────────────────────────────────
+let curOrderPage = 1, searchTimeout = null;
+
+async function loadOrders(page = 1) {
+  curOrderPage = page;
+  const body = document.getElementById('ordersBody');
+  body.innerHTML = '<tr class="empty-row"><td colspan="8">Loading…</td></tr>';
+  try {
+    const r = await apiFetch(`/api/orders?page=${page}`);
+    const data = await r.json();
+    if (!data.data?.length) {
+      body.innerHTML = '<tr class="empty-row"><td colspan="8">No orders found</td></tr>';
+      document.getElementById('ordersPagination').innerHTML = '';
+      return;
+    }
+    const meta = data.meta.pagination;
+    document.getElementById('orders-info').textContent =
+      `${en(meta.total)} orders · Page ${en(meta.current_page)} of ${en(meta.total_pages)}`;
+    body.innerHTML = data.data.map(o => {
+      const prod = o.products?.[0];
+      return `<tr>
+        <td class="td-mono td-muted">${o.reference}</td>
+        <td>${escHtml(o.customer_name)}</td>
+        <td class="td-muted">${escHtml(o.customer_city||'—')}</td>
+        <td class="td-muted">${escHtml(o.customer_country?.name||'—')}</td>
+        <td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${prod?.name||''}">
+          ${prod ? `${escHtml(prod.name)} × ${en(prod.quantity)}` : '—'}
+        </td>
+        <td class="td-green">${usd(o.total_usd)}</td>
+        <td>${badge(o.status)}</td>
+        <td class="td-muted td-en">${fmtDate(o.created_at)}</td>
+      </tr>`;
+    }).join('');
+    renderPagination(meta, 'ordersPagination', p => loadOrders(p));
+  } catch (e) {
+    body.innerHTML = `<tr><td colspan="8"><div class="err-box">${e.message}</div></td></tr>`;
+  }
+}
+
+function debounceSearch() {
+  clearTimeout(searchTimeout);
+  searchTimeout = setTimeout(() => loadOrders(1), 600);
+}
+
+function renderPagination(meta, elId, cb) {
+  const el = document.getElementById(elId);
+  const cur = meta.current_page, total = meta.total_pages;
+  if (total <= 1) { el.innerHTML = ''; return; }
+
+  let pages = [];
+  if (total <= 7) { pages = [...Array(total)].map((_,i)=>i+1); }
+  else {
+    pages = [1];
+    if (cur > 3) pages.push('…');
+    for (let i = Math.max(2,cur-1); i <= Math.min(total-1,cur+1); i++) pages.push(i);
+    if (cur < total-2) pages.push('…');
+    pages.push(total);
+  }
+
+  el.innerHTML = `
+    <div class="pg-btn" onclick="(${cb})(${cur-1})" ${cur<=1?'style="opacity:.3;pointer-events:none"':''}>‹</div>
+    ${pages.map(p => p === '…'
+      ? `<span class="pg-info">…</span>`
+      : `<div class="pg-btn${p===cur?' active':''}" onclick="(${cb})(${p})">${p}</div>`
+    ).join('')}
+    <div class="pg-btn" onclick="(${cb})(${cur+1})" ${cur>=total?'style="opacity:.3;pointer-events:none"':''}>›</div>
+    <span class="pg-info">${en(meta.total)} total</span>
+  `;
+}
+
+// ── Shipments ─────────────────────────────────────────────────────────────
+async function loadShipments() {
+  const body = document.getElementById('shipmentsBody');
+  body.innerHTML = '<tr class="empty-row"><td colspan="8">Loading…</td></tr>';
+  try {
+    const r = await apiFetch('/api/shipments');
+    const data = await r.json();
+    document.getElementById('ship-info').textContent = `${en(data.length)} tracked shipments`;
+    if (!data.length) {
+      body.innerHTML = '<tr class="empty-row"><td colspan="8">No tracked shipments</td></tr>';
+      return;
+    }
+    body.innerHTML = data.map(s => `<tr>
+      <td class="td-mono td-muted">${s.reference}</td>
+      <td>${escHtml(s.customer||'—')}</td>
+      <td class="td-muted">${s.country||'—'}</td>
+      <td class="td-mono" style="color:var(--cyan)">${s.tracking_number}</td>
+      <td><span class="track-chip">${s.tracking_status||'—'}</span></td>
+      <td>${badge(s.status)}</td>
+      <td class="td-muted td-en">${fmtDate(s.shipped_at)}</td>
+      <td class="td-green">${usd(s.total_usd)}</td>
+    </tr>`).join('');
+  } catch (e) {
+    body.innerHTML = `<tr><td colspan="8"><div class="err-box">${e.message}</div></td></tr>`;
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  INVENTORY v2 — 30-day accurate data · manual groups · overrides
+// ═══════════════════════════════════════════════════════════════
+
+// ── Raw data from API ─────────────────────────────────────────
+let invProdData  = null;   // /api/products
+let inv30dData   = null;   // /api/orders-30d
+let invShipDays  = {};     // /api/shipping-days
+let invFlags     = {};     // country → flag emoji
+
+// ── Persisted state (localStorage) ──────────────────────────
+let manualGroups    = loadLS('cod_groups', []);     // [{id,name,skus:[]}]
+let manualOverrides = loadLS('cod_overrides', {});  // {"groupId::co": float}
+
+// ── UI state ─────────────────────────────────────────────────
+let expandedGroups = {};   // groupId → bool
+
+// ── localStorage helpers ──────────────────────────────────────
+function loadLS(key, def) {
+  try { const v = localStorage.getItem(key); return v ? JSON.parse(v) : def; }
+  catch { return def; }
+}
+function saveLS(key, val) {
+  try { localStorage.setItem(key, JSON.stringify(val)); } catch {}
+}
+
+// ── Client-side group key (mirrors server logic) ──────────────
+const VARIANT_RE_CLIENT = /(\s*[-–]\s*|\s+)(black|brown|dark[\s\-]?brown|dark|light|balck|blonde?|natural|red|white|gr[ae]y|darkbrown)\s*\.?\s*$/i;
+function clientGroupKey(name) {
+  return name.trim().replace(VARIANT_RE_CLIENT, '').replace(/\.\s*$/, '').trim().toLowerCase().replace(/\s+/g, ' ');
+}
+function clientGroupName(name) {
+  return name.trim().replace(VARIANT_RE_CLIENT, '').replace(/\.\s*$/, '').trim()
+    .replace(/\b\w/g, c => c.toUpperCase());
+}
+
+// ── normCountry (mirrors server logic) ───────────────────────
+function normCo(name, code) {
+  const n = (name || '').toUpperCase().trim();
+  const c = (code || '').toUpperCase().trim();
+  if (n === 'KSA'  || n.includes('SAUDI')   || c === 'SA') return 'KSA';
+  if (n === 'UAE'  || n.includes('EMIRATES') || c === 'AE') return 'UAE';
+  if (n === 'KWT'  || n.includes('KUWAIT')   || c === 'KW') return 'KWT';
+  if (n === 'QAT'  || n.includes('QATAR')    || c === 'QA') return 'QAT';
+  if (n === 'OM'   || n.includes('OMAN')     || c === 'OM') return 'OM';
+  if (n === 'BHR'  || n.includes('BAHRAIN')  || c === 'BH') return 'BHR';
+  return n || c || '—';
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  LOAD INVENTORY
+// ═══════════════════════════════════════════════════════════════
+async function loadInventory() {
+  const el = document.getElementById('inventoryGroups');
+  el.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text3)">Fetching products + last-30-days orders…</div>';
+
+  try {
+    // Fetch 3 sources in parallel — products, 30d stats, shipping days
+    const [pRes, dRes, sRes] = await Promise.all([
+      fetch('/api/products'),
+      fetch('/api/orders-30d'),
+      fetch('/api/shipping-days'),
+    ]);
+    invProdData = await pRes.json();
+    inv30dData  = await dRes.json();
+    const sd    = await sRes.json();
+
+    invFlags    = sd._flags || {};
+    invShipDays = Object.fromEntries(
+      Object.entries(sd).filter(([k]) => !k.startsWith('_'))
+    );
+
+    // Show accuracy bar
+    renderAccuracyBar();
+    // Render shipping days config
+    renderShipConfig();
+    // Render all product groups
+    renderInventoryV2();
+
+  } catch (e) {
+    el.innerHTML = `<div class="err-box">Failed: ${e.message}</div>`;
+  }
+}
+
+// ─── Accuracy bar ──────────────────────────────────────────────
+function renderAccuracyBar() {
+  const d = inv30dData;
+  if (!d) return;
+  const bar = document.getElementById('accuracyBar');
+  bar.style.display = 'flex';
+  document.getElementById('acc-orders').textContent  = `${en(d.totalOrdersIn30d)} orders analyzed`;
+  document.getElementById('acc-window').textContent  = `last 30 days`;
+  document.getElementById('acc-cutoff').textContent  = `since ${d.cutoffDate || '—'}`;
+  document.getElementById('acc-fetched').textContent = `(${en(d.totalFetched)} fetched, filtered to window)`;
+}
+
+// ─── Shipping days config ─────────────────────────────────────
+function renderShipConfig() {
+  const html = Object.entries(invShipDays).map(([co, days]) => `
+    <div class="ship-country-item">
+      <span class="cc-flag">${invFlags[co] || '🏳️'}</span>
+      <span class="ship-country-label">${co}</span>
+      <input class="ship-days-input" type="number" min="1" max="365"
+        value="${days}" data-country="${co}"
+        onchange="updateShipDays('${co}', this.value)">
+      <span class="ship-days-unit">days</span>
+    </div>`).join('');
+  document.getElementById('shipCountries').innerHTML = html;
+}
+
+async function updateShipDays(country, days) {
+  try {
+    const res = await apiFetch('/api/shipping-days', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ country, days: parseInt(days) }),
+    });
+    const sd = await res.json();
+    invShipDays = Object.fromEntries(Object.entries(sd).filter(([k]) => !k.startsWith('_')));
+    invFlags    = sd._flags || invFlags;
+    renderInventoryV2();   // recalculate coverage instantly
+  } catch (e) { console.error(e); }
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  BUILD EFFECTIVE GROUPS
+// ═══════════════════════════════════════════════════════════════
+function buildEffectiveGroups() {
+  const allProds = invProdData?.data || [];
+
+  // SKUs already claimed by a manual group
+  const claimedSkus = new Set(manualGroups.flatMap(g => g.skus));
+
+  // 1. Manual groups
+  const groups = manualGroups.map(mg => ({
+    id      : mg.id,
+    name    : mg.name,
+    isManual: true,
+    prods   : allProds.filter(p => mg.skus.includes(p.sku)),
+  })).filter(g => g.prods.length > 0);
+
+  // 2. Auto-group remaining SKUs by base name
+  const remaining = allProds.filter(p => !claimedSkus.has(p.sku));
+  const autoMap   = {};
+  remaining.forEach(p => {
+    const key = clientGroupKey(p.name);
+    if (!autoMap[key]) autoMap[key] = { name: clientGroupName(p.name), prods: [] };
+    autoMap[key].prods.push(p);
+  });
+  Object.entries(autoMap).forEach(([key, g]) => {
+    groups.push({ id: 'auto_' + key, name: g.name, isManual: false, prods: g.prods });
+  });
+
+  return groups;
+}
+
+// ─── Compute stock per country for a group ────────────────────
+function groupCountryStocks(prods) {
+  const map = {}; // co → { stock, warehouses: [{w,qty}], skuBreakdown: [{sku,name,stock}] }
+  prods.forEach(prod => {
+    (prod.stocks || []).forEach(s => {
+      const co = normCo(s.country, s.country_iso_code);
+      if (!map[co]) map[co] = { stock: 0, warehouses: [], skuBreakdown: {} };
+      const qty = parseInt(s.quantity) || 0;
+      map[co].stock += qty;
+      map[co].warehouses.push({ w: s.project || '?', qty });
+      map[co].skuBreakdown[prod.sku] = (map[co].skuBreakdown[prod.sku] || 0) + qty;
+    });
+  });
+  return map;
+}
+
+// ─── Compute daily avg from 30d data for a group in a country ─
+function groupDailyAvg30d(prods, co) {
+  // Sum daily averages of all SKUs in this group for this country
+  let total = 0;
+  prods.forEach(prod => {
+    const avg = inv30dData?.dailyAvgSku?.[co]?.[prod.sku] || 0;
+    total += avg;
+  });
+  return Math.round(total * 100) / 100;
+}
+
+// ─── Coverage calculation ─────────────────────────────────────
+function calcCoverage(stock, dailyAvg) {
+  if (dailyAvg <= 0) return stock > 0 ? 9999 : 0;
+  return Math.round(stock / dailyAvg);
+}
+function coverageStatus(days, shipDays) {
+  if (days < shipDays)          return 'critical';
+  if (days < shipDays + 15)     return 'warning';
+  return 'safe';
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  RENDER
+// ═══════════════════════════════════════════════════════════════
+function renderInventoryV2() {
+  const groups = buildEffectiveGroups();
+  const el     = document.getElementById('inventoryGroups');
+
+  if (!groups.length) {
+    el.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text3)">No products found</div>';
+    return;
+  }
+
+  // Summary counters
+  let totalStock = 0, critCnt = 0, warnCnt = 0, safeCnt = 0;
+
+  const html = groups.map((g, gi) => {
+    const coStocks  = groupCountryStocks(g.prods);
+    const coEntries = Object.entries(coStocks).sort((a,b) => b[1].stock - a[1].stock);
+    const gTotalStock = coEntries.reduce((s,[,d]) => s + d.stock, 0);
+    totalStock += gTotalStock;
+
+    // Per-country cards
+    const coCards = coEntries.map(([co, d]) => {
+      const overrideKey = `${g.id}::${co}`;
+      const auto30d     = groupDailyAvg30d(g.prods, co);
+      const manual      = manualOverrides[overrideKey];
+      const effectiveAvg = (manual !== undefined && manual !== null) ? parseFloat(manual) : auto30d;
+      const shipDays    = invShipDays[co] || 20;
+      const cov         = calcCoverage(d.stock, effectiveAvg);
+      const status      = coverageStatus(cov, shipDays);
+
+      if (status === 'critical') critCnt++;
+      else if (status === 'warning') warnCnt++;
+      else safeCnt++;
+
+      return buildCCCard(g.id, co, d.stock, effectiveAvg, auto30d, manual, cov, status, shipDays, d.skuBreakdown, g.prods);
+    }).join('');
+
+    // SKU breakdown rows
+    const skuRows = buildSkuRows(g.prods, coStocks);
+    const isOpen  = expandedGroups[g.id] || false;
+    const statusSumm = buildStatusSummary(coEntries.map(([co, d]) => {
+      const overrideKey = `${g.id}::${co}`;
+      const auto30d     = groupDailyAvg30d(g.prods, co);
+      const manual      = manualOverrides[overrideKey];
+      const eff         = (manual !== undefined && manual !== null) ? parseFloat(manual) : auto30d;
+      const cov         = calcCoverage(d.stock, eff);
+      return coverageStatus(cov, invShipDays[co] || 20);
+    }));
+
+    return `
+    <div class="pgroup" id="pgroup-${gi}">
+      <div class="pgroup-head${isOpen?' open':''}" onclick="toggleGroup(${gi},'${g.id}')">
+        <div class="pgroup-icon">${g.isManual ? '🗂️' : '📦'}</div>
+        <div style="flex:1;min-width:0">
+          <div class="pgroup-name">${escHtml(g.name)}</div>
+          <div class="pgroup-meta">${en(g.prods.length)} SKU${g.prods.length>1?'s':''} · ${statusSumm}</div>
+        </div>
+        <div class="pgroup-total">
+          <div class="pgroup-total-val">${en(gTotalStock)}</div>
+          <div class="pgroup-total-label">total units</div>
+        </div>
+        <span class="pgroup-chevron${isOpen?' open':''}">▼</span>
+      </div>
+
+      <div class="country-cards">${coCards}</div>
+
+      <div class="sku-breakdown${isOpen?' open':''}" id="skubd-${gi}">
+        <div class="sku-bd-head"><span>📋</span> SKU Breakdown — ${escHtml(g.name)}</div>
+        ${skuRows}
+      </div>
+    </div>`;
+  }).join('');
+
+  el.innerHTML = html;
+  document.getElementById('inv-total-stock').textContent = en(totalStock);
+  document.getElementById('inv-critical').textContent    = en(critCnt);
+  document.getElementById('inv-warning').textContent     = en(warnCnt);
+}
+
+// ─── Country card ─────────────────────────────────────────────
+function buildCCCard(groupId, co, stock, effectiveAvg, auto30d, manualVal, cov, status, shipDays, skuBd, prods) {
+  const ST = {
+    safe:     { cls:'st-safe',     badge:'sb-safe',     icon:'✅', label:'SAFE' },
+    warning:  { cls:'st-warning',  badge:'sb-warning',  icon:'⚠️', label:'WARNING' },
+    critical: { cls:'st-critical', badge:'sb-critical', icon:'🔴', label:'CRITICAL' },
+  };
+  const st = ST[status] || ST.safe;
+  const flag = invFlags[co] || '🏳️';
+
+  const covColor = status === 'critical' ? 'var(--red)' : status === 'warning' ? 'var(--yellow)' : 'var(--green)';
+  const covDisp  = cov >= 9999 ? '∞' : en(cov);
+  const isManual = manualVal !== undefined && manualVal !== null;
+  const overKey  = `${groupId}::${co}`;
+
+  return `
+  <div class="cc-card ${st.cls}" id="cc-${groupId.replace(/[^a-z0-9]/gi,'_')}_${co}">
+    <div class="cc-flag-name"><span class="cc-flag">${flag}</span><span>${co}</span></div>
+
+    <div class="cc-stock">${en(stock)}</div>
+    <div class="cc-stock-label">units in stock</div>
+    <div class="cc-divider"></div>
+
+    <div class="cc-row">
+      <span class="cc-row-label">Days remaining</span>
+      <span class="cc-row-val cc-coverage" style="color:${covColor}">${covDisp} days</span>
+    </div>
+    <div class="cc-row">
+      <span class="cc-row-label">Ships in</span>
+      <span class="cc-row-val" style="color:var(--cyan)">${en(shipDays)} days to ${co}</span>
+    </div>
+    <div class="cc-row">
+      <span class="cc-row-label">Safe threshold</span>
+      <span class="cc-row-val" style="color:var(--text3)">+15 days buffer</span>
+    </div>
+
+    <div class="cc-divider"></div>
+
+    <!-- Editable orders/day -->
+    <div style="font-size:.68rem;color:var(--text3);margin-bottom:4px">
+      Orders / day
+      <span style="color:var(--text3);font-size:.64rem">(last 30 days: ${en(auto30d,2)})</span>
+    </div>
+    <div class="override-wrap">
+      <input class="override-input${isManual?' is-manual':''}" type="number"
+        min="0" step="0.1"
+        value="${isManual ? manualVal : auto30d}"
+        data-auto="${auto30d}"
+        data-key="${overKey}"
+        data-stock="${stock}"
+        data-ship="${shipDays}"
+        data-group="${groupId}"
+        data-co="${co}"
+        oninput="handleOverrideInput(this)"
+        title="Override daily orders for ${co}">
+      <span class="override-label">orders/day</span>
+      <button class="override-reset${isManual?' visible':''}"
+        onclick="resetOverride(this, '${overKey}')"
+        title="Reset to auto (${en(auto30d,2)})">↺</button>
+    </div>
+
+    <div>
+      <span class="cc-status-badge ${st.badge}">${st.icon} ${st.label}</span>
+    </div>
+  </div>`;
+}
+
+// ─── Handle override input ────────────────────────────────────
+function handleOverrideInput(inp) {
+  const key     = inp.dataset.key;
+  const val     = parseFloat(inp.value);
+  const auto    = parseFloat(inp.dataset.auto);
+  const stock   = parseInt(inp.dataset.stock);
+  const ship    = parseInt(inp.dataset.ship);
+  const isManual = !isNaN(val) && val !== auto;
+
+  // Persist
+  if (isNaN(val) || val === auto) {
+    delete manualOverrides[key];
+  } else {
+    manualOverrides[key] = val;
+  }
+  saveLS('cod_overrides', manualOverrides);
+
+  // Style the input
+  inp.classList.toggle('is-manual', isManual);
+  const resetBtn = inp.parentElement.querySelector('.override-reset');
+  if (resetBtn) resetBtn.classList.toggle('visible', isManual);
+
+  // Recalculate coverage live in this card
+  const eff = isNaN(val) ? auto : val;
+  const cov = calcCoverage(stock, eff);
+  const status = coverageStatus(cov, ship);
+  const covColor = status==='critical' ? 'var(--red)' : status==='warning' ? 'var(--yellow)' : 'var(--green)';
+  const covDisp  = cov >= 9999 ? '∞' : en(cov);
+
+  // Find the card and update its display
+  const card = inp.closest('.cc-card');
+  if (!card) return;
+
+  const covEl = card.querySelector('.cc-coverage');
+  if (covEl) covEl.textContent = covDisp + ' days';
+  if (covEl) covEl.style.color = covColor;
+
+  const badgeEl = card.querySelector('.cc-status-badge');
+  const ST = {
+    safe:     { badge:'sb-safe',     icon:'✅', label:'SAFE' },
+    warning:  { badge:'sb-warning',  icon:'⚠️', label:'WARNING' },
+    critical: { badge:'sb-critical', icon:'🔴', label:'CRITICAL' },
+  };
+  const stInfo = ST[status] || ST.safe;
+  if (badgeEl) {
+    badgeEl.className = 'cc-status-badge ' + stInfo.badge;
+    badgeEl.textContent = stInfo.icon + ' ' + stInfo.label;
+  }
+
+  // Update card border color class
+  card.className = card.className.replace(/st-\w+/, 'st-' + status);
+
+  // Update summary bar
+  updateInvSummaryLive();
+}
+
+function resetOverride(btn, key) {
+  delete manualOverrides[key];
+  saveLS('cod_overrides', manualOverrides);
+  // Re-render the full inventory (simplest approach for reset)
+  renderInventoryV2();
+}
+
+// Recalculate summary KPIs from live DOM
+function updateInvSummaryLive() {
+  let crit = 0, warn = 0, safe = 0;
+  document.querySelectorAll('.cc-status-badge').forEach(el => {
+    const t = el.textContent;
+    if (t.includes('CRITICAL')) crit++;
+    else if (t.includes('WARNING')) warn++;
+    else safe++;
+  });
+  document.getElementById('inv-critical').textContent = en(crit);
+  document.getElementById('inv-warning').textContent  = en(warn);
+}
+
+// ─── Status summary for group header ─────────────────────────
+function buildStatusSummary(statuses) {
+  const c = { safe:0, warning:0, critical:0 };
+  statuses.forEach(s => c[s] = (c[s]||0)+1);
+  const parts = [];
+  if (c.critical) parts.push(`<span style="color:var(--red)">🔴 ${c.critical}</span>`);
+  if (c.warning)  parts.push(`<span style="color:var(--yellow)">⚠️ ${c.warning}</span>`);
+  if (c.safe)     parts.push(`<span style="color:var(--green)">✅ ${c.safe}</span>`);
+  return parts.join(' · ') || '<span style="color:var(--text3)">No stock</span>';
+}
+
+// ─── SKU breakdown rows ───────────────────────────────────────
+function buildSkuRows(prods, coStocks) {
+  return prods.map(p => {
+    const totalStock = (p.stocks||[]).reduce((s,st)=>s+(parseInt(st.quantity)||0),0);
+    const totalCls   = totalStock > 30 ? 'sq-ok' : totalStock > 0 ? 'sq-low' : 'sq-zero';
+    const chips = Object.entries(coStocks).map(([co, d]) => {
+      const qty = d.skuBreakdown[p.sku] || 0;
+      if (qty === 0) return '';
+      const cls = qty > 20 ? 'sq-ok' : qty > 0 ? 'sq-low' : 'sq-zero';
+      return `<span class="sku-co-chip ${cls}">${invFlags[co]||'🏳️'} ${co}: ${en(qty)}</span>`;
+    }).filter(Boolean).join('');
+
+    return `
+    <div class="sku-bd-row">
+      <span class="sku-bd-sku">${escHtml(p.sku)}</span>
+      <span class="sku-bd-name">${escHtml(p.name)}</span>
+      <span class="sku-co-chips">${chips||'<span style="color:var(--text3);font-size:.7rem">no stock</span>'}</span>
+      <span class="stock-qty ${totalCls}" style="flex-shrink:0">${en(totalStock)}</span>
+    </div>`;
+  }).join('');
+}
+
+// ─── Toggle group expand ──────────────────────────────────────
+function toggleGroup(gi, id) {
+  expandedGroups[id] = !expandedGroups[id];
+  const head    = document.querySelector(`#pgroup-${gi} .pgroup-head`);
+  const chevron = document.querySelector(`#pgroup-${gi} .pgroup-chevron`);
+  const bd      = document.getElementById(`skubd-${gi}`);
+  if (head)    head.classList.toggle('open', expandedGroups[id]);
+  if (chevron) chevron.classList.toggle('open', expandedGroups[id]);
+  if (bd)      bd.classList.toggle('open', expandedGroups[id]);
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  MANAGE GROUPS MODAL
+// ═══════════════════════════════════════════════════════════════
+function openGroupModal() {
+  // Populate SKU checklist
+  const prods = invProdData?.data || [];
+  const claimedSkus = new Set(manualGroups.flatMap(g => g.skus));
+
+  document.getElementById('skuChecklist').innerHTML = prods.map(p => {
+    const total = (p.stocks||[]).reduce((s,st)=>s+(parseInt(st.quantity)||0),0);
+    const claimed = claimedSkus.has(p.sku);
+    return `
+    <label class="sku-check-row" style="${claimed?'opacity:.45':''}">
+      <input type="checkbox" value="${escHtml(p.sku)}" ${claimed?'disabled':''}>
+      <span class="sku-check-name">${escHtml(p.name)}</span>
+      <span class="sku-check-sku">${escHtml(p.sku)}</span>
+      <span class="sku-check-stock">${en(total)}</span>
+    </label>`;
+  }).join('');
+
+  // Populate existing groups
+  const eSection = document.getElementById('existingGroupsSection');
+  const eList    = document.getElementById('existingGroupsList');
+  if (manualGroups.length) {
+    eSection.style.display = '';
+    eList.innerHTML = manualGroups.map(g => `
+      <div class="group-item">
+        <div>
+          <div class="group-item-name">${escHtml(g.name)}</div>
+          <div class="group-item-skus">${g.skus.length} SKU${g.skus.length>1?'s':''}: ${g.skus.join(', ')}</div>
+        </div>
+        <button class="group-del" onclick="deleteGroup('${g.id}')">Delete</button>
+      </div>`).join('');
+  } else {
+    eSection.style.display = 'none';
+  }
+
+  document.getElementById('newGroupName').value = '';
+  document.getElementById('groupModal').classList.add('open');
+}
+
+function closeGroupModal(event) {
+  if (event && event.target !== document.getElementById('groupModal')) return;
+  document.getElementById('groupModal').classList.remove('open');
+}
+
+function saveNewGroup() {
+  const name = document.getElementById('newGroupName').value.trim();
+  if (!name) { alert('Please enter a group name'); return; }
+
+  const checked = [...document.querySelectorAll('#skuChecklist input:checked')].map(i => i.value);
+  if (!checked.length) { alert('Select at least one SKU'); return; }
+
+  const id = 'mg_' + Date.now();
+  manualGroups.push({ id, name, skus: checked });
+  saveLS('cod_groups', manualGroups);
+
+  document.getElementById('groupModal').classList.remove('open');
+  renderInventoryV2();
+}
+
+function deleteGroup(id) {
+  manualGroups = manualGroups.filter(g => g.id !== id);
+  saveLS('cod_groups', manualGroups);
+  // Also clean up overrides for this group
+  Object.keys(manualOverrides).filter(k => k.startsWith(id + '::')).forEach(k => delete manualOverrides[k]);
+  saveLS('cod_overrides', manualOverrides);
+  document.getElementById('groupModal').classList.remove('open');
+  renderInventoryV2();
+}
+
+// ── Webhook Log ───────────────────────────────────────────────────────────
+async function loadWebhookLog() {
+  const el = document.getElementById('whLog');
+  try {
+    const r = await apiFetch('/api/webhook-log');
+    const data = await r.json();
+    if (!data.length) return;
+    el.innerHTML = data.map(e => {
+      const actionColor = e.action === 'subtracted' ? 'var(--red)' : e.action === 'added_back' ? 'var(--green)' : 'var(--text3)';
+      return `<div class="wh-entry">
+        <span class="wh-ts">${new Date(e.ts).toLocaleTimeString('en-US')}</span>
+        <span class="wh-id">#${e.id}</span>
+        <span class="wh-info">
+          ${badge(e.status)} · SKU <strong>${e.sku||'—'}</strong> · Qty ${en(e.qty)}
+          ${e.action ? `· <span class="wh-action" style="color:${actionColor}">${e.action}</span>` : ''}
+        </span>
+      </div>`;
+    }).join('');
+
+    // Delta list
+    const dr = await apiFetch('/api/webhook-log');
+    renderDeltaList(data);
+  } catch (e) {
+    el.innerHTML = `<div class="err-box">${e.message}</div>`;
+  }
+}
+
+function renderDeltaList(log) {
+  const deltas = {};
+  log.forEach(e => {
+    if (e.sku && e.action) {
+      deltas[e.sku] = (deltas[e.sku]||0) + (e.action==='subtracted' ? -e.qty : e.qty);
+    }
+  });
+  const el = document.getElementById('deltaList');
+  const entries = Object.entries(deltas);
+  if (!entries.length) { el.textContent = 'No inventory changes recorded.'; return; }
+  el.innerHTML = entries.map(([sku, delta]) => `
+    <div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--border)">
+      <span>${sku}</span>
+      <span class="${delta < 0 ? 'delta-neg' : 'delta-pos'} inv-delta">${delta > 0 ? '+' : ''}${en(delta)}</span>
+    </div>
+  `).join('');
+}
+
+// ── Refresh all ───────────────────────────────────────────────────────────
+async function refreshAll() {
+  const btn = document.getElementById('refreshBtn');
+  btn.disabled = true; btn.textContent = '⏳ …';
+  try {
+    await apiFetch('/api/refresh', { method: 'POST' });
+    statsData = null;
+    Object.keys(charts).forEach(k => destroyChart(k));
+    Object.keys(tabLoaded).forEach(k => { tabLoaded[k] = false; });
+    await loadStats();
+    if (activeTab !== 'overview') showTab(activeTab);
+  } finally {
+    btn.disabled = false; btn.textContent = '🔄 Refresh';
+  }
+}
+
+// ── Auto-poll webhook log (every 10s when on webhook tab) ─────────────────
+setInterval(() => {
+  if (activeTab === 'webhook') loadWebhookLog();
+  if (activeTab === 'inventory') loadInventory();
+}, 10000);
+
+// ── Auto-refresh stats every 5 minutes ────────────────────────────────────
+setInterval(async () => {
+  await apiFetch('/api/refresh', { method: 'POST' });
+  await loadStats();
+}, 5 * 60 * 1000);
+
+// ── Escape HTML ───────────────────────────────────────────────────────────
+function escHtml(s) {
+  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+// ── Boot ──────────────────────────────────────────────────────────────────
+checkAuth(); if (_token) loadStats();
+</script>
+</body>
+</html>
