@@ -21,6 +21,21 @@ const url    = require('url');
 const crypto = require('crypto');
 const { exec } = require('child_process');
 
+// ── Persistent file cache ──────────────────────────────────────────────────────
+const DB_PATH = path.join(__dirname, 'db.json');
+
+function loadDB() {
+  try { return JSON.parse(fs.readFileSync(DB_PATH, 'utf8')); }
+  catch { return {}; }
+}
+
+function saveDB(data) {
+  try { fs.writeFileSync(DB_PATH, JSON.stringify(data)); }
+  catch (e) { console.error('[DB] Save error:', e.message); }
+}
+
+const fileDB = loadDB();
+
 const PORT = process.env.PORT || 3000;
 const API_HOST = 'seller.cod.network';
 
@@ -78,9 +93,10 @@ function apiGet(token, pathname, qs = {}) {
       res.on('end', () => {
         try {
           const parsed = JSON.parse(raw);
-          // Detect rate limiting (API returns 200 with error message)
-          if (parsed.error && typeof parsed.error === 'string' && parsed.error.toLowerCase().includes('too many')) {
-            reject(new Error('Rate limited: ' + parsed.error));
+          // Detect rate limiting — HTTP 429 or error/message containing "too many"
+          const errText = (parsed.error || parsed.message || '').toString().toLowerCase();
+          if (res.statusCode === 429 || parsed.status === 'error' || errText.includes('too many')) {
+            reject(new Error('Rate limited: ' + (parsed.message || parsed.error || 'HTTP ' + res.statusCode)));
             return;
           }
           resolve(parsed);
@@ -123,22 +139,70 @@ function classifyStatus(st) {
 }
 
 // ── Retry wrapper with exponential backoff for rate limits ────────────────────
-async function apiGetRetry(token, pathname, qs = {}, retries = 5) {
+async function apiGetRetry(token, pathname, qs = {}, retries = 6) {
   for (let i = 0; i <= retries; i++) {
     try { return await apiGet(token, pathname, qs); }
     catch (e) {
       if (i === retries) throw e;
       const isRateLimit = e.message.includes('Rate limited');
-      const delay = isRateLimit ? 2000 * (i + 1) : 1200 * (i + 1);
+      const delay = isRateLimit ? 1500 * (i + 1) : 800 * (i + 1);
       await new Promise(r => setTimeout(r, delay));
     }
   }
+}
+
+// ── Concurrent page fetcher with adaptive rate limiting ──────────────────────
+// Uses a shared queue with N workers. When rate-limited, all workers slow down.
+async function fetchAllPages(token, totalPages, onProgress) {
+  const allData = [];
+  let completed = 1; // page 1 already done
+  let nextPage = 2;
+  let globalDelay = 500; // ms between requests per worker
+
+  async function worker() {
+    while (true) {
+      const page = nextPage++;
+      if (page > totalPages) break;
+
+      for (let attempt = 0; attempt < 10; attempt++) {
+        try {
+          const r = await apiGet(token, '/orders', { page });
+          if (r.data) allData.push(...r.data);
+          completed++;
+          if (onProgress) onProgress(completed, totalPages);
+          globalDelay = Math.max(80, globalDelay * 0.95); // speed up on success
+          break;
+        } catch (e) {
+          if (e.message.includes('Rate limited')) {
+            globalDelay = Math.min(2000, globalDelay * 2); // slow down all workers
+          }
+          const delay = Math.min(5000, (attempt + 1) * (attempt + 1) * 300); // quadratic backoff
+          await new Promise(r => setTimeout(r, delay));
+          if (attempt === 9) {
+            console.warn(`[Stats] Page ${page} failed after 10 attempts`);
+          }
+        }
+      }
+      await new Promise(r => setTimeout(r, globalDelay));
+    }
+  }
+
+  // Use 1 worker to avoid API rate limiting (429 errors)
+  const CONCURRENCY = 1;
+  const workers = [];
+  for (let i = 0; i < Math.min(CONCURRENCY, totalPages - 1); i++) {
+    workers.push(worker());
+  }
+  await Promise.all(workers);
+  return allData;
 }
 
 // ── Background stats builder ──────────────────────────────────────────────────
 // API forces per_page=10, so 3500+ orders = 350+ pages.
 // We build stats in background and serve partial results while loading.
 const buildingStats = {};  // token → Promise (prevents duplicate builds)
+
+function orderTotal(o) { return parseFloat(o.total_usd) || parseFloat(o.total) || 0; }
 
 function computeStatsFromOrders(orders, totalOrders) {
   const statusCount  = {};
@@ -149,7 +213,7 @@ function computeStatsFromOrders(orders, totalOrders) {
 
   orders.forEach(o => {
     statusCount[o.status||'Unknown'] = (statusCount[o.status||'Unknown']||0) + 1;
-    const v = parseFloat(o.total_usd)||0;
+    const v = orderTotal(o);
     const d = (o.created_at||'').slice(0,10);
     const m = d.slice(0,7);
     if (d) dailyRev[d]   = (dailyRev[d]  ||0) + v;
@@ -177,23 +241,23 @@ function computeStatsFromOrders(orders, totalOrders) {
   const cancelled = orders.filter(o => classifyStatus(o.status) === 'cancelled').length;
   const shipped   = orders.filter(o => classifyStatus(o.status) === 'shipped').length;
   const pending   = orders.filter(o => classifyStatus(o.status) === 'pending').length;
-  const totalRevenue = r2(orders.reduce((s,o) => s + (parseFloat(o.total_usd)||0), 0));
+  const totalRevenue = r2(orders.reduce((s,o) => s + orderTotal(o), 0));
 
   const deliveredRevenue = r2(
     orders.filter(o => classifyStatus(o.status) === 'delivered')
-      .reduce((s,o) => s + (parseFloat(o.total_usd)||0), 0)
+      .reduce((s,o) => s + orderTotal(o), 0)
   );
   const deliveredTodayRevenue = r2(
     orders.filter(o => (o.created_at||'').slice(0,10) === todayStr && classifyStatus(o.status) === 'delivered')
-      .reduce((s,o) => s + (parseFloat(o.total_usd)||0), 0)
+      .reduce((s,o) => s + orderTotal(o), 0)
   );
   const deliveredMonthRevenue = r2(
     orders.filter(o => (o.created_at||'').slice(0,7) === monthStr && classifyStatus(o.status) === 'delivered')
-      .reduce((s,o) => s + (parseFloat(o.total_usd)||0), 0)
+      .reduce((s,o) => s + orderTotal(o), 0)
   );
   const confirmedRevenue = r2(
     orders.filter(o => ['confirmed','delivered','shipped'].includes(classifyStatus(o.status)))
-      .reduce((s,o) => s + (parseFloat(o.total_usd)||0), 0)
+      .reduce((s,o) => s + orderTotal(o), 0)
   );
   const todayConfirmed = orders.filter(o => (o.created_at||'').slice(0,10) === todayStr && classifyStatus(o.status) === 'confirmed').length;
   const countryCount = {};
@@ -218,58 +282,66 @@ function computeStatsFromOrders(orders, totalOrders) {
   };
 }
 
+// ── MODIFIED: buildStats now saves to db.json and does incremental fetches ────
 async function buildStats(token) {
   const ck = cacheKey('stats', token);
   const hit = getCache(ck);
   if (hit) return hit;
 
-  // Prevent duplicate builds — join the in-flight promise
   if (buildingStats[token]) return buildingStats[token];
 
   buildingStats[token] = (async () => {
     try {
+      const dbKey = 'orders_' + token.slice(-12);
+      let savedOrders = fileDB[dbKey]?.orders || [];
+      const lastSaved = fileDB[dbKey]?.savedAt || null;
+      const now = Date.now();
+
       const p1 = await apiGetRetry(token, '/orders', { page: 1 });
       const meta = p1.meta?.pagination || {};
       const totalOrders = meta.total || 0;
       const totalPages = meta.total_pages || 1;
 
-      let orders = [...(p1.data || [])];
-      console.log(`[Stats] Fetching ${totalPages} pages (${totalOrders} orders)…`);
+      let orders = [];
 
-      // Pass 1: fetch pages in batches of 5 with delay
-      const BATCH = 5;
-      const failedPages = [];
-      for (let start = 2; start <= totalPages; start += BATCH) {
-        const pages = [];
-        for (let p = start; p < start + BATCH && p <= totalPages; p++) pages.push(p);
-        const results = await Promise.allSettled(pages.map(p => apiGetRetry(token, '/orders', { page: p })));
-        results.forEach((r, idx) => {
-          if (r.status === 'fulfilled') orders = orders.concat(r.value.data || []);
-          else failedPages.push(pages[idx]);
-        });
-
-        if (start + BATCH <= totalPages) await new Promise(r => setTimeout(r, 1000));
-
-        // Save partial results to cache so frontend can poll progress
-        const partial = computeStatsFromOrders(orders, totalOrders);
-        partial._loading = true;
-        partial._progress = Math.min(100, Math.round(orders.length / totalOrders * 100));
-        setCache(ck, partial);
-      }
-
-      // Pass 2: retry failed pages one at a time with longer delays
-      if (failedPages.length > 0) {
-        console.log(`[Stats] Retrying ${failedPages.length} failed pages…`);
-        for (const pg of failedPages) {
-          await new Promise(r => setTimeout(r, 2500));
+      // إذا عندنا بيانات محفوظة وعمرها أقل من 6 ساعات، استخدمها مباشرة
+      if (savedOrders.length > 0 && lastSaved && (now - lastSaved) < 6 * 60 * 60 * 1000) {
+        console.log(`[Stats] Using saved ${savedOrders.length} orders from file cache`);
+        orders = savedOrders;
+      } else if (savedOrders.length > 0) {
+        // عندنا بيانات قديمة — اجلب فقط أول 5 صفحات للطلبات الجديدة
+        console.log(`[Stats] Incremental fetch — getting latest 5 pages only`);
+        orders = [...(p1.data || [])];
+        for (let pg = 2; pg <= Math.min(5, totalPages); pg++) {
           try {
-            const r = await apiGetRetry(token, '/orders', { page: pg }, 5);
-            orders = orders.concat(r.data || []);
-          } catch (e) { console.log(`[Stats] Page ${pg} failed permanently: ${e.message}`); }
+            const r = await apiGetRetry(token, '/orders', { page: pg });
+            if (r.data) orders.push(...r.data);
+            await new Promise(r => setTimeout(r, 300));
+          } catch (e) { break; }
         }
+        const existingIds = new Set(savedOrders.map(o => o.id));
+        const brandNew = orders.filter(o => !existingIds.has(o.id));
+        orders = [...brandNew, ...savedOrders];
+        console.log(`[Stats] Added ${brandNew.length} new orders to ${savedOrders.length} saved`);
+      } else {
+        // أول مرة: اجلب كل شيء
+        console.log(`[Stats] First time fetch: ${totalPages} pages`);
+        orders = [...(p1.data || [])];
+        const moreOrders = await fetchAllPages(token, totalPages, (done, total) => {
+          if (done % 30 === 0 || done === total) {
+            const partial = { _loading: true, _progress: Math.min(99, Math.round(done / total * 100)), totalOrders, sampledOrders: done * 10 };
+            setCache(ck, partial);
+          }
+        });
+        orders = orders.concat(moreOrders);
       }
 
-      console.log(`[Stats] Done: ${orders.length}/${totalOrders} orders fetched`);
+      // احفظ في db.json
+      fileDB[dbKey] = { orders, savedAt: now, total: totalOrders };
+      saveDB(fileDB);
+      console.log(`[Stats] Saved ${orders.length} orders to db.json`);
+
+      setCache(cacheKey('raw_orders', token), orders);
       const data = computeStatsFromOrders(orders, totalOrders);
       setCache(ck, data);
       return data;
@@ -282,33 +354,29 @@ async function buildStats(token) {
 }
 
 // ── Last 30 days order stats ───────────────────────────────────────────────────
+// Reuses the stats cache (which already has all orders) instead of fetching again
 async function fetchLast30DaysOrders(token) {
   const ck = cacheKey('ord30', token);
   const hit = getCache(ck);
   if (hit) return hit;
 
+  // Reuse orders already fetched by buildStats instead of re-fetching
+  await buildStats(token);
+  const cachedOrders = getCache(cacheKey('raw_orders', token));
+
   const cutoff   = new Date(); cutoff.setDate(cutoff.getDate()-30);
   const cutoffTs = cutoff.getTime();
 
-  const p1 = await apiGetRetry(token, '/orders', { page: 1 });
-  const totalPages = Math.min(p1.meta?.pagination?.total_pages||1, 500);
+  let allFetched = cachedOrders || [];
 
-  let allFetched = [...(p1.data||[])];
-  let hitCutoff  = allFetched.some(o => new Date(o.created_at).getTime() < cutoffTs);
-
-  if (!hitCutoff) {
-    const BATCH = 5;
-    for (let start=2; start<=totalPages && !hitCutoff; start+=BATCH) {
-      const pages = [];
-      for (let p=start; p<start+BATCH && p<=totalPages; p++) pages.push(p);
-      const results = await Promise.allSettled(pages.map(p => apiGetRetry(token, '/orders', { page: p })));
-      results.forEach(r => {
-        if (r.status!=='fulfilled') return;
-        const rows = r.value.data||[];
-        allFetched = allFetched.concat(rows);
-        if (rows.some(o => new Date(o.created_at).getTime() < cutoffTs)) hitCutoff = true;
-      });
-      if (start + BATCH <= totalPages && !hitCutoff) await new Promise(r => setTimeout(r, 1000));
+  // Fallback: if raw orders cache expired, fetch fresh
+  if (!allFetched.length) {
+    const p1 = await apiGetRetry(token, '/orders', { page: 1 });
+    const totalPages = Math.min(p1.meta?.pagination?.total_pages||1, 500);
+    allFetched = [...(p1.data||[])];
+    if (totalPages > 1) {
+      const moreOrders = await fetchAllPages(token, totalPages, null);
+      allFetched = allFetched.concat(moreOrders);
     }
   }
 
@@ -546,6 +614,40 @@ const server = http.createServer(async (req, res) => {
   if (p.startsWith('/api/')) {
     const token = extractToken(req);
     if (!token) { sendJSON(res, { error: 'Unauthorized — provide Bearer token' }, 401); return; }
+
+    // ── /api/debug-page (TEMPORARY — fetch a single page and return raw response) ──
+    if (p === '/api/debug-page' && method === 'GET') {
+      const pg = parseInt(parsed.query.page) || 100;
+      try {
+        const raw = await new Promise((resolve, reject) => {
+          const params = new URLSearchParams({ per_page: 100, page: pg }).toString();
+          const opts = {
+            hostname: API_HOST,
+            path: `/api/orders?${params}`,
+            method: 'GET',
+            headers: {
+              Authorization: `Bearer ${token}`,
+              Accept: 'application/json',
+              'User-Agent': 'COD-Dashboard/10',
+            },
+          };
+          const req2 = https.request(opts, r => {
+            let d = '';
+            r.on('data', c => d += c);
+            r.on('end', () => resolve({ statusCode: r.statusCode, headers: r.headers, body: d }));
+          });
+          req2.on('error', reject);
+          req2.setTimeout(30000, () => { req2.destroy(); reject(new Error('timeout')); });
+          req2.end();
+        });
+        console.log(`[DEBUG] Page ${pg} → HTTP ${raw.statusCode}, body length: ${raw.body.length}`);
+        console.log(`[DEBUG] Body preview: ${raw.body.slice(0, 500)}`);
+        let parsed_body;
+        try { parsed_body = JSON.parse(raw.body); } catch { parsed_body = raw.body; }
+        sendJSON(res, { page: pg, statusCode: raw.statusCode, responseHeaders: raw.headers, data: parsed_body });
+      } catch (e) { sendJSON(res, { error: e.message }, 500); }
+      return;
+    }
 
     // ── /api/stats ────────────────────────────────────────────────────────
     if (p === '/api/stats' && method === 'GET') {
