@@ -46,7 +46,7 @@ function getState(token) {
 
 // ── Cache (per-token) ──────────────────────────────────────────────────────────
 const cache    = {};
-const CACHE_TTL = 4 * 60 * 1000;
+const CACHE_TTL = 30 * 60 * 1000;  // 30 min — fetching 350+ pages is expensive with rate limits
 
 function cacheKey(prefix, token) { return `${prefix}_${token.slice(-12)}`; }
 function getCache(k)    { const e = cache[k]; return e && (Date.now()-e.t) < CACHE_TTL ? e.d : null; }
@@ -76,12 +76,20 @@ function apiGet(token, pathname, qs = {}) {
       let raw = '';
       res.on('data', c => raw += c);
       res.on('end', () => {
-        try { resolve(JSON.parse(raw)); }
+        try {
+          const parsed = JSON.parse(raw);
+          // Detect rate limiting (API returns 200 with error message)
+          if (parsed.error && typeof parsed.error === 'string' && parsed.error.toLowerCase().includes('too many')) {
+            reject(new Error('Rate limited: ' + parsed.error));
+            return;
+          }
+          resolve(parsed);
+        }
         catch { reject(new Error('JSON parse error: ' + raw.slice(0, 120))); }
       });
     });
     req.on('error', reject);
-    req.setTimeout(15000, () => { req.destroy(); reject(new Error('API timeout')); });
+    req.setTimeout(45000, () => { req.destroy(); reject(new Error('API timeout')); });
     req.end();
   });
 }
@@ -114,31 +122,25 @@ function classifyStatus(st) {
   return 'other';
 }
 
-// ── Stats: fetch ALL orders in controlled parallel batches ─────────────────────
-// Batch size 10 = 10 concurrent HTTPS requests at a time → fast + safe vs rate limits.
-// With 3,516 orders / 100 per page = 36 pages → ~4 batches → completes in ~4 API round-trips.
-async function buildStats(token) {
-  const ck = cacheKey('stats', token);
-  const hit = getCache(ck);
-  if (hit) return hit;
-
-  // Page 1 tells us the total
-  const p1          = await apiGet(token, '/orders', { page: 1 });
-  const meta        = p1.meta?.pagination || {};
-  const totalOrders = meta.total       || 0;
-  const totalPages  = meta.total_pages || 1;
-
-  let orders = [...(p1.data || [])];
-
-  // Fetch remaining pages in batches of 10 (parallel within each batch)
-  const BATCH = 10;
-  for (let start = 2; start <= totalPages; start += BATCH) {
-    const pages = [];
-    for (let p = start; p < start + BATCH && p <= totalPages; p++) pages.push(p);
-    const results = await Promise.allSettled(pages.map(p => apiGet(token, '/orders', { page: p })));
-    results.forEach(r => { if (r.status === 'fulfilled') orders = orders.concat(r.value.data || []); });
+// ── Retry wrapper with exponential backoff for rate limits ────────────────────
+async function apiGetRetry(token, pathname, qs = {}, retries = 5) {
+  for (let i = 0; i <= retries; i++) {
+    try { return await apiGet(token, pathname, qs); }
+    catch (e) {
+      if (i === retries) throw e;
+      const isRateLimit = e.message.includes('Rate limited');
+      const delay = isRateLimit ? 2000 * (i + 1) : 1200 * (i + 1);
+      await new Promise(r => setTimeout(r, delay));
+    }
   }
+}
 
+// ── Background stats builder ──────────────────────────────────────────────────
+// API forces per_page=10, so 3500+ orders = 350+ pages.
+// We build stats in background and serve partial results while loading.
+const buildingStats = {};  // token → Promise (prevents duplicate builds)
+
+function computeStatsFromOrders(orders, totalOrders) {
   const statusCount  = {};
   const dailyRev     = {};
   const monthlyRev   = {};
@@ -160,7 +162,6 @@ async function buildStats(token) {
     const k = d.toISOString().slice(0,10);
     dailyChart.push({ date:k, label:k.slice(5), rev:r2(dailyRev[k]||0) });
   }
-
   const monthlyChart = [];
   const now = new Date();
   for (let i=11; i>=0; i--) {
@@ -176,48 +177,108 @@ async function buildStats(token) {
   const cancelled = orders.filter(o => classifyStatus(o.status) === 'cancelled').length;
   const shipped   = orders.filter(o => classifyStatus(o.status) === 'shipped').length;
   const pending   = orders.filter(o => classifyStatus(o.status) === 'pending').length;
-
-  // Revenue: ONLY from confirmed + delivered orders (actual sales, not pending/cancelled)
-  const confirmedRevenue = r2(
-    orders
-      .filter(o => ['confirmed','delivered','shipped'].includes(classifyStatus(o.status)))
-      .reduce((s,o) => s + (parseFloat(o.total_usd)||0), 0)
-  );
   const totalRevenue = r2(orders.reduce((s,o) => s + (parseFloat(o.total_usd)||0), 0));
 
-  // Today's and monthly confirmed revenue
-  const confirmedTodayRevenue  = r2(
-    orders.filter(o => (o.created_at||'').slice(0,10) === todayStr &&
-      ['confirmed','delivered','shipped'].includes(classifyStatus(o.status)))
+  const deliveredRevenue = r2(
+    orders.filter(o => classifyStatus(o.status) === 'delivered')
       .reduce((s,o) => s + (parseFloat(o.total_usd)||0), 0)
   );
-  const confirmedMonthRevenue  = r2(
-    orders.filter(o => (o.created_at||'').slice(0,7) === monthStr &&
-      ['confirmed','delivered','shipped'].includes(classifyStatus(o.status)))
+  const deliveredTodayRevenue = r2(
+    orders.filter(o => (o.created_at||'').slice(0,10) === todayStr && classifyStatus(o.status) === 'delivered')
       .reduce((s,o) => s + (parseFloat(o.total_usd)||0), 0)
   );
+  const deliveredMonthRevenue = r2(
+    orders.filter(o => (o.created_at||'').slice(0,7) === monthStr && classifyStatus(o.status) === 'delivered')
+      .reduce((s,o) => s + (parseFloat(o.total_usd)||0), 0)
+  );
+  const confirmedRevenue = r2(
+    orders.filter(o => ['confirmed','delivered','shipped'].includes(classifyStatus(o.status)))
+      .reduce((s,o) => s + (parseFloat(o.total_usd)||0), 0)
+  );
+  const todayConfirmed = orders.filter(o => (o.created_at||'').slice(0,10) === todayStr && classifyStatus(o.status) === 'confirmed').length;
+  const countryCount = {};
+  orders.forEach(o => {
+    const co = normCountry(o.customer_country?.name, o.customer_country?.code);
+    countryCount[co] = (countryCount[co]||0) + 1;
+  });
 
-  const data = {
+  return {
     totalOrders,
-    sampledOrders : orders.length,   // should equal totalOrders — all fetched
-    isFull        : orders.length >= totalOrders,
-    statusCount,
-    // Revenue (all orders in sample)
-    totalRevenue,
+    sampledOrders: orders.length,
+    isFull: orders.length >= totalOrders,
+    statusCount, countryCount, totalRevenue,
+    deliveredRevenue, deliveredTodayRevenue, deliveredMonthRevenue,
     confirmedRevenue,
-    todayRevenue          : r2(dailyRev[todayStr]  || 0),
-    monthRevenue          : r2(monthlyRev[monthStr] || 0),
-    confirmedTodayRevenue,
-    confirmedMonthRevenue,
-    // Order counts by status
-    confirmed, delivered, returned, cancelled, shipped, pending,
-    tracked  : orders.filter(o => o.tracking_number).length,
+    todayRevenue: r2(dailyRev[todayStr] || 0),
+    monthRevenue: r2(monthlyRev[monthStr] || 0),
+    confirmed, delivered, returned, cancelled, shipped, pending, todayConfirmed,
+    tracked: orders.filter(o => o.tracking_number).length,
     dailyChart, monthlyChart,
-    refreshedAt : new Date().toISOString(),
+    refreshedAt: new Date().toISOString(),
   };
+}
 
-  setCache(ck, data);
-  return data;
+async function buildStats(token) {
+  const ck = cacheKey('stats', token);
+  const hit = getCache(ck);
+  if (hit) return hit;
+
+  // Prevent duplicate builds — join the in-flight promise
+  if (buildingStats[token]) return buildingStats[token];
+
+  buildingStats[token] = (async () => {
+    try {
+      const p1 = await apiGetRetry(token, '/orders', { page: 1 });
+      const meta = p1.meta?.pagination || {};
+      const totalOrders = meta.total || 0;
+      const totalPages = meta.total_pages || 1;
+
+      let orders = [...(p1.data || [])];
+      console.log(`[Stats] Fetching ${totalPages} pages (${totalOrders} orders)…`);
+
+      // Pass 1: fetch pages in batches of 5 with delay
+      const BATCH = 5;
+      const failedPages = [];
+      for (let start = 2; start <= totalPages; start += BATCH) {
+        const pages = [];
+        for (let p = start; p < start + BATCH && p <= totalPages; p++) pages.push(p);
+        const results = await Promise.allSettled(pages.map(p => apiGetRetry(token, '/orders', { page: p })));
+        results.forEach((r, idx) => {
+          if (r.status === 'fulfilled') orders = orders.concat(r.value.data || []);
+          else failedPages.push(pages[idx]);
+        });
+
+        if (start + BATCH <= totalPages) await new Promise(r => setTimeout(r, 1000));
+
+        // Save partial results to cache so frontend can poll progress
+        const partial = computeStatsFromOrders(orders, totalOrders);
+        partial._loading = true;
+        partial._progress = Math.min(100, Math.round(orders.length / totalOrders * 100));
+        setCache(ck, partial);
+      }
+
+      // Pass 2: retry failed pages one at a time with longer delays
+      if (failedPages.length > 0) {
+        console.log(`[Stats] Retrying ${failedPages.length} failed pages…`);
+        for (const pg of failedPages) {
+          await new Promise(r => setTimeout(r, 2500));
+          try {
+            const r = await apiGetRetry(token, '/orders', { page: pg }, 5);
+            orders = orders.concat(r.data || []);
+          } catch (e) { console.log(`[Stats] Page ${pg} failed permanently: ${e.message}`); }
+        }
+      }
+
+      console.log(`[Stats] Done: ${orders.length}/${totalOrders} orders fetched`);
+      const data = computeStatsFromOrders(orders, totalOrders);
+      setCache(ck, data);
+      return data;
+    } finally {
+      delete buildingStats[token];
+    }
+  })();
+
+  return buildingStats[token];
 }
 
 // ── Last 30 days order stats ───────────────────────────────────────────────────
@@ -229,8 +290,8 @@ async function fetchLast30DaysOrders(token) {
   const cutoff   = new Date(); cutoff.setDate(cutoff.getDate()-30);
   const cutoffTs = cutoff.getTime();
 
-  const p1 = await apiGet(token, '/orders', { page: 1 });
-  const totalPages = Math.min(p1.meta?.pagination?.total_pages||1, 60);
+  const p1 = await apiGetRetry(token, '/orders', { page: 1 });
+  const totalPages = Math.min(p1.meta?.pagination?.total_pages||1, 500);
 
   let allFetched = [...(p1.data||[])];
   let hitCutoff  = allFetched.some(o => new Date(o.created_at).getTime() < cutoffTs);
@@ -240,13 +301,14 @@ async function fetchLast30DaysOrders(token) {
     for (let start=2; start<=totalPages && !hitCutoff; start+=BATCH) {
       const pages = [];
       for (let p=start; p<start+BATCH && p<=totalPages; p++) pages.push(p);
-      const results = await Promise.allSettled(pages.map(p => apiGet(token, '/orders', { page: p })));
+      const results = await Promise.allSettled(pages.map(p => apiGetRetry(token, '/orders', { page: p })));
       results.forEach(r => {
         if (r.status!=='fulfilled') return;
         const rows = r.value.data||[];
         allFetched = allFetched.concat(rows);
         if (rows.some(o => new Date(o.created_at).getTime() < cutoffTs)) hitCutoff = true;
       });
+      if (start + BATCH <= totalPages && !hitCutoff) await new Promise(r => setTimeout(r, 1000));
     }
   }
 
@@ -262,10 +324,15 @@ async function fetchLast30DaysOrders(token) {
     });
   });
 
-  const dailyAvgSku = {}, dailyAvgCountry = {};
+  const dailyAvgSku = {}, dailyAvgCountry = {}, dailyAvgUnitsCountry = {};
   Object.entries(coSkuQty).forEach(([co, skus]) => {
     dailyAvgSku[co] = {};
-    Object.entries(skus).forEach(([sku, total]) => { dailyAvgSku[co][sku] = r2(total/30); });
+    let totalUnits = 0;
+    Object.entries(skus).forEach(([sku, total]) => {
+      dailyAvgSku[co][sku] = r2(total/30);
+      totalUnits += total;
+    });
+    dailyAvgUnitsCountry[co] = r2(totalUnits/30);
   });
   Object.entries(coOrderCnt).forEach(([co, cnt]) => { dailyAvgCountry[co] = r2(cnt/30); });
 
@@ -274,7 +341,7 @@ async function fetchLast30DaysOrders(token) {
     totalFetched     : allFetched.length,
     cutoffDate       : cutoff.toISOString().slice(0,10),
     daysBack         : 30,
-    dailyAvgSku, dailyAvgCountry, coOrderCnt,
+    dailyAvgSku, dailyAvgCountry, dailyAvgUnitsCountry, coOrderCnt,
   };
 
   setCache(ck, result);
@@ -286,7 +353,24 @@ async function getProducts(token) {
   const ck  = cacheKey('prods', token);
   const st  = getState(token);
   let   data = getCache(ck);
-  if (!data) { data = await apiGet(token, '/products', {}); setCache(ck, data); }
+  if (!data) {
+    // Fetch ALL product pages (API may paginate like orders)
+    const p1 = await apiGetRetry(token, '/products', { page: 1 });
+    const totalPages = p1.meta?.pagination?.total_pages || 1;
+    let allProducts = [...(p1.data || [])];
+    if (totalPages > 1) {
+      const BATCH = 10;
+      for (let start = 2; start <= totalPages; start += BATCH) {
+        const pages = [];
+        for (let p = start; p < start + BATCH && p <= totalPages; p++) pages.push(p);
+        const results = await Promise.allSettled(pages.map(p => apiGetRetry(token, '/products', { page: p })));
+        results.forEach(r => { if (r.status === 'fulfilled') allProducts = allProducts.concat(r.value.data || []); });
+      }
+      console.log(`[Products] Fetched ${allProducts.length} products across ${totalPages} pages`);
+    }
+    data = { data: allProducts, meta: p1.meta };
+    setCache(ck, data);
+  }
 
   // Deep-clone and apply in-memory deltas
   data = JSON.parse(JSON.stringify(data));
