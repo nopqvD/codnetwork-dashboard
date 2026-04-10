@@ -73,9 +73,22 @@ body {
   position: absolute;
   border-radius: 50%;
   filter: blur(120px);
-  opacity: 0.25;
+  opacity: 0.35;
   will-change: transform;
   animation: auroraFloat 20s ease-in-out infinite alternate;
+  transition: transform .3s ease-out;
+}
+/* Cursor glow — follows mouse directly */
+#cursorGlow {
+  position: fixed;
+  width: 400px; height: 400px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(249,115,22,0.18), rgba(249,115,22,0.05) 40%, transparent 70%);
+  pointer-events: none;
+  z-index: 1;
+  transform: translate(-50%, -50%);
+  filter: blur(40px);
+  transition: left .1s ease-out, top .1s ease-out;
 }
 .aurora-blob:nth-child(1) {
   width: 600px; height: 600px;
@@ -103,7 +116,7 @@ body {
   top: 20%; left: 50%;
   animation-duration: 28s;
   animation-delay: -3s;
-  opacity: 0.15;
+  opacity: 0.25;
 }
 @keyframes auroraFloat {
   0%   { transform: translate(0, 0) scale(1); }
@@ -112,6 +125,7 @@ body {
   100% { transform: translate(30px, 20px) scale(1.05); }
 }
 [data-theme="light"] .aurora-blob { opacity: 0.10; }
+[data-theme="light"] #cursorGlow { opacity: 0.05; }
 
 /* ================================================================
    SCROLLBAR
@@ -584,6 +598,7 @@ tbody tr:hover { background: var(--surface2); }
   <div class="aurora-blob"></div>
   <div class="aurora-blob"></div>
   <div class="aurora-blob"></div>
+  <div id="cursorGlow"></div>
 </div>
 
 <!-- ============================================================
@@ -1102,9 +1117,15 @@ document.addEventListener('mousemove', e => {
   const cx = e.clientX / window.innerWidth - 0.5;
   const cy = e.clientY / window.innerHeight - 0.5;
   blobs.forEach((b, i) => {
-    const factor = (i + 1) * 8;
+    const factor = (i + 1) * 18;
     b.style.transform = `translate(${cx * factor}px, ${cy * factor}px)`;
   });
+  // Cursor glow follows mouse directly
+  const glow = document.getElementById('cursorGlow');
+  if (glow) {
+    glow.style.left = e.clientX + 'px';
+    glow.style.top = e.clientY + 'px';
+  }
 });
 
 /* ================================================================
