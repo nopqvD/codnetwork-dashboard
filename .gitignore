@@ -18,6 +18,10 @@ Thumbs.db
 *.log
 logs/
 
+# Local database cache
+db.json
+db.json.txt
+
 # Build output (if added later)
 dist/
 build/

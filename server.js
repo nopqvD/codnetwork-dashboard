@@ -19,7 +19,36 @@ const fs     = require('fs');
 const path   = require('path');
 const url    = require('url');
 const crypto = require('crypto');
-const { exec } = require('child_process');
+
+// Load .env file BEFORE requiring db module (db.js reads DATABASE_URL at import)
+try {
+  const envPath = path.join(__dirname, '.env');
+  if (fs.existsSync(envPath)) {
+    fs.readFileSync(envPath, 'utf8').split('\n').forEach(line => {
+      const [key, ...val] = line.split('=');
+      if (key && key.trim() && !key.startsWith('#')) {
+        process.env[key.trim()] = val.join('=').trim();
+      }
+    });
+  }
+} catch {}
+
+const db     = require('./db');
+// ── Cross-platform URL opener (execa-style using spawn — no external deps) ────
+const openUrl = (u) => {
+  try {
+    const { spawn } = require('child_process');
+    const isWin  = process.platform === 'win32';
+    const isMac  = process.platform === 'darwin';
+    const cmd    = isWin ? 'cmd'      : isMac ? 'open' : 'xdg-open';
+    const args   = isWin ? ['/c','start','',u] : [u];
+    const opts   = { detached: true, stdio: 'ignore', shell: false };
+    const child  = spawn(cmd, args, opts);
+    child.unref();
+  } catch (e) {
+    console.warn('[openUrl] Could not open browser:', e.message);
+  }
+};
 
 // ── Persistent file cache ──────────────────────────────────────────────────────
 const DB_PATH = path.join(__dirname, 'db.json');
@@ -54,21 +83,45 @@ function getState(token) {
       shippingDays   : { ...DEFAULT_SHIPPING_DAYS },
       inventoryDelta : {},      // sku → int delta
       webhookLog     : [],      // last 50 events
+      _dbLoaded      : false,
     };
+    // Asynchronously hydrate state from DB (PostgreSQL or file)
+    (async () => {
+      try {
+        const [days, deltas] = await Promise.all([
+          db.getAllShippingDays(token),
+          db.getAllInventoryDeltas(token),
+        ]);
+        if (Object.keys(days).length)   Object.assign(userState[token].shippingDays,   days);
+        if (Object.keys(deltas).length) Object.assign(userState[token].inventoryDelta, deltas);
+        userState[token]._dbLoaded = true;
+      } catch (e) {
+        console.error('[State] Failed to load from DB:', e.message);
+      }
+    })();
   }
   return userState[token];
 }
 
 // ── Cache (per-token) ──────────────────────────────────────────────────────────
 const cache    = {};
-const CACHE_TTL = 30 * 60 * 1000;  // 30 min — fetching 350+ pages is expensive with rate limits
+const CACHE_TTL = parseInt(process.env.CACHE_TTL || '1800') * 1000;
 
 function cacheKey(prefix, token) { return `${prefix}_${token.slice(-12)}`; }
 function getCache(k)    { const e = cache[k]; return e && (Date.now()-e.t) < CACHE_TTL ? e.d : null; }
-function setCache(k, d) { cache[k] = { d, t: Date.now() }; }
+function setCache(k, d) { cache[k] = { d, t: Date.now() }; trimCache(); }
 function bustCache(token) {
   const suffix = token.slice(-12);
   Object.keys(cache).filter(k => k.endsWith('_'+suffix)).forEach(k => delete cache[k]);
+}
+
+const MAX_CACHE_ENTRIES = 30;
+function trimCache() {
+  const keys = Object.keys(cache);
+  if (keys.length > MAX_CACHE_ENTRIES) {
+    const sorted = keys.sort((a,b) => (cache[a]?.t||0) - (cache[b]?.t||0));
+    sorted.slice(0, keys.length - MAX_CACHE_ENTRIES).forEach(k => delete cache[k]);
+  }
 }
 
 function r2(n) { return Math.round(n * 100) / 100; }
@@ -110,6 +163,41 @@ function apiGet(token, pathname, qs = {}) {
   });
 }
 
+// ── Retry wrapper for generic async functions ──────────────────────────────────
+async function fetchWithRetry(fn, retries = 3) {
+  for (let i = 0; i < retries; i++) {
+    try { return await fn(); }
+    catch (err) {
+      if (err.message && err.message.startsWith('Rate limited')) {
+        await new Promise(r => setTimeout(r, 2000 * (i + 1)));
+        continue;
+      }
+      throw err;
+    }
+  }
+  return null;
+}
+
+// ── Full paginated orders fetch ────────────────────────────────────────────────
+async function fetchAllOrders(token) {
+  let all = [];
+  let page = 1;
+  while (true) {
+    const res = await fetchWithRetry(() =>
+      apiGet(token, '/orders', { page })
+    );
+    if (!res) return page === 1 ? null : all;
+    const orders = res.data || [];
+    if (!orders.length) break;
+    all = all.concat(orders);
+    const pagination = res.meta?.pagination || {};
+    if (page >= (pagination.total_pages || 1)) break;
+    page++;
+    await new Promise(r => setTimeout(r, 300));
+  }
+  return all;
+}
+
 // ── Country / group helpers ────────────────────────────────────────────────────
 function normCountry(name, code) {
   const n = (name||'').toUpperCase().trim();
@@ -131,7 +219,7 @@ function classifyStatus(st) {
   if (['return','retourné','مرتجع'].some(x=>s.includes(x)))     return 'returned';
   if (['confirmed','confirmé'].some(x=>s.includes(x)))           return 'confirmed';
   if (['shipped','dispatched','expédié'].some(x=>s.includes(x))) return 'shipped';
-  if (['cancelled','canceled','annulé'].some(x=>s.includes(x))) return 'cancelled';
+  if (['cancelled','canceled','cancel','annulé'].some(x=>s.includes(x))) return 'cancelled';
   if (['pending'].some(x=>s.includes(x)))                        return 'pending';
   if (['new','nouveau'].some(x=>s.includes(x)))                  return 'new';
   if (['assigned'].some(x=>s.includes(x)))                       return 'assigned';
@@ -139,13 +227,13 @@ function classifyStatus(st) {
 }
 
 // ── Retry wrapper with exponential backoff for rate limits ────────────────────
-async function apiGetRetry(token, pathname, qs = {}, retries = 6) {
+async function apiGetRetry(token, pathname, qs = {}, retries = 3) {
   for (let i = 0; i <= retries; i++) {
     try { return await apiGet(token, pathname, qs); }
     catch (e) {
       if (i === retries) throw e;
       const isRateLimit = e.message.includes('Rate limited');
-      const delay = isRateLimit ? 1500 * (i + 1) : 800 * (i + 1);
+      const delay = isRateLimit ? Math.min(8000, 1000 * Math.pow(2, i)) : Math.min(4000, 500 * Math.pow(2, i));
       await new Promise(r => setTimeout(r, delay));
     }
   }
@@ -157,7 +245,7 @@ async function fetchAllPages(token, totalPages, onProgress) {
   const allData = [];
   let completed = 1; // page 1 already done
   let nextPage = 2;
-  let globalDelay = 500; // ms between requests per worker
+  let globalDelay = 300; // ms between requests per worker
 
   async function worker() {
     while (true) {
@@ -187,8 +275,7 @@ async function fetchAllPages(token, totalPages, onProgress) {
     }
   }
 
-  // Use 1 worker to avoid API rate limiting (429 errors)
-  const CONCURRENCY = 1;
+  const CONCURRENCY = 3;
   const workers = [];
   for (let i = 0; i < Math.min(CONCURRENCY, totalPages - 1); i++) {
     workers.push(worker());
@@ -242,6 +329,7 @@ function computeStatsFromOrders(orders, totalOrders) {
   const shipped   = orders.filter(o => classifyStatus(o.status) === 'shipped').length;
   const pending   = orders.filter(o => classifyStatus(o.status) === 'pending').length;
   const totalRevenue = r2(orders.reduce((s,o) => s + orderTotal(o), 0));
+  const totalServiceFees = r2(orders.reduce((s,o) => s + (parseFloat(o.shipping_fees) || 0) + (parseFloat(o.delivery_fees) || 0), 0));
 
   const deliveredRevenue = r2(
     orders.filter(o => classifyStatus(o.status) === 'delivered')
@@ -270,7 +358,7 @@ function computeStatsFromOrders(orders, totalOrders) {
     totalOrders,
     sampledOrders: orders.length,
     isFull: orders.length >= totalOrders,
-    statusCount, countryCount, totalRevenue,
+    statusCount, countryCount, totalRevenue, totalServiceFees,
     deliveredRevenue, deliveredTodayRevenue, deliveredMonthRevenue,
     confirmedRevenue,
     todayRevenue: r2(dailyRev[todayStr] || 0),
@@ -297,6 +385,12 @@ async function buildStats(token) {
       const lastSaved = fileDB[dbKey]?.savedAt || null;
       const now = Date.now();
 
+      const [statsRes, productsRes] = await Promise.all([
+        fetchWithRetry(() => apiGet(token, '/stats', {})).catch(() => null),
+        fetchWithRetry(() => apiGet(token, '/products', {})).catch(() => null),
+      ]);
+      if (productsRes) setCache(cacheKey('prods', token), productsRes);
+
       const p1 = await apiGetRetry(token, '/orders', { page: 1 });
       const meta = p1.meta?.pagination || {};
       const totalOrders = meta.total || 0;
@@ -309,31 +403,38 @@ async function buildStats(token) {
         console.log(`[Stats] Using saved ${savedOrders.length} orders from file cache`);
         orders = savedOrders;
       } else if (savedOrders.length > 0) {
-        // عندنا بيانات قديمة — اجلب فقط أول 5 صفحات للطلبات الجديدة
-        console.log(`[Stats] Incremental fetch — getting latest 5 pages only`);
-        orders = [...(p1.data || [])];
-        for (let pg = 2; pg <= Math.min(5, totalPages); pg++) {
+        // عندنا بيانات قديمة — اجلب حتى نجد طلبات موجودة أو ننتهي
+        console.log(`[Stats] Incremental fetch — fetching until overlap with saved data`);
+        const existingIds = new Set(savedOrders.map(o => o.id));
+        let freshOrders = [...(p1.data || [])];
+        let foundOverlap = false;
+        for (let pg = 2; pg <= totalPages; pg++) {
+          // Check if last page had overlap
+          if (foundOverlap) break;
           try {
             const r = await apiGetRetry(token, '/orders', { page: pg });
-            if (r.data) orders.push(...r.data);
+            const pageOrders = r.data || [];
+            if (!pageOrders.length) break;
+            freshOrders.push(...pageOrders);
+            // If any order on this page exists in saved data, we've caught up
+            if (pageOrders.some(o => existingIds.has(o.id))) {
+              foundOverlap = true;
+            }
             await new Promise(r => setTimeout(r, 300));
           } catch (e) { break; }
         }
-        const existingIds = new Set(savedOrders.map(o => o.id));
-        const brandNew = orders.filter(o => !existingIds.has(o.id));
-        orders = [...brandNew, ...savedOrders];
-        console.log(`[Stats] Added ${brandNew.length} new orders to ${savedOrders.length} saved`);
+        const brandNew = freshOrders.filter(o => !existingIds.has(o.id));
+        // Also update existing orders with fresh data
+        const freshIds = new Set(freshOrders.map(o => o.id));
+        const unchangedOld = savedOrders.filter(o => !freshIds.has(o.id));
+        orders = [...freshOrders, ...unchangedOld];
+        console.log(`[Stats] Added ${brandNew.length} new, updated ${freshOrders.length - brandNew.length}, kept ${unchangedOld.length} old`);
       } else {
-        // أول مرة: اجلب كل شيء
+        // أول مرة: اجلب كل شيء باستخدام fetchAllOrders
         console.log(`[Stats] First time fetch: ${totalPages} pages`);
-        orders = [...(p1.data || [])];
-        const moreOrders = await fetchAllPages(token, totalPages, (done, total) => {
-          if (done % 30 === 0 || done === total) {
-            const partial = { _loading: true, _progress: Math.min(99, Math.round(done / total * 100)), totalOrders, sampledOrders: done * 10 };
-            setCache(ck, partial);
-          }
-        });
-        orders = orders.concat(moreOrders);
+        const fetched = await fetchAllOrders(token);
+        if (!fetched) return null;
+        orders = fetched;
       }
 
       // احفظ في db.json
@@ -506,10 +607,18 @@ function processWebhookEvent(token, payload) {
   if (['confirmed','shipped','delivered'].includes(cls) && sku) {
     st.inventoryDelta[sku] = (st.inventoryDelta[sku]||0) - qty;
     action = 'subtracted';
-  } else if (cls === 'returned' && sku) {
+    // Persist delta
+    db.updateInventoryDelta(token, sku, -qty).catch(e =>
+      console.error('[DB] updateInventoryDelta failed:', e.message)
+    );
+  } else if ((cls === 'returned' || cls === 'cancelled') && sku) {
     st.inventoryDelta[sku] = (st.inventoryDelta[sku]||0) + qty;
     action = 'added_back';
     delete cache[cacheKey('prods', token)];
+    // Persist delta
+    db.updateInventoryDelta(token, sku, +qty).catch(e =>
+      console.error('[DB] updateInventoryDelta failed:', e.message)
+    );
   }
 
   // Bust stats caches
@@ -525,6 +634,18 @@ function processWebhookEvent(token, payload) {
   st.webhookLog.unshift(entry);
   if (st.webhookLog.length > 50) st.webhookLog.pop();
   console.log('[Webhook]', token.slice(-8), JSON.stringify(entry));
+
+  // Persist webhook log entry to DB
+  db.saveWebhookLog(token, {
+    order_id       : String(entry.id),
+    status         : entry.status,
+    classification : entry.cls,
+    sku            : entry.sku,
+    qty            : entry.qty,
+    action         : entry.action,
+    customer       : entry.customer,
+  }).catch(e => console.error('[DB] saveWebhookLog failed:', e.message));
+
   return entry;
 }
 
@@ -546,6 +667,19 @@ function extractToken(req) {
   return parsed.query.token || '';
 }
 
+// Resolve session token → API token (for session-based auth)
+async function resolveApiToken(req) {
+  const rawToken = extractToken(req);
+  if (!rawToken) return { apiToken: '', userId: null };
+  // Try session-based auth
+  try {
+    const session = await db.getSession(rawToken);
+    if (session) return { apiToken: session.api_token, userId: session.user_id };
+  } catch {}
+  // Fallback: raw token is the API token itself
+  return { apiToken: rawToken, userId: null };
+}
+
 function sendJSON(res, data, status = 200) {
   const body = JSON.stringify(data);
   res.writeHead(status, {
@@ -560,6 +694,7 @@ function sendJSON(res, data, status = 200) {
 const MIME = {
   '.html':'text/html; charset=utf-8', '.css':'text/css',
   '.js':'application/javascript', '.json':'application/json', '.ico':'image/x-icon',
+  '.png':'image/png', '.svg':'image/svg+xml', '.jpg':'image/jpeg', '.jpeg':'image/jpeg',
 };
 function serveFile(res, filePath) {
   const ext = path.extname(filePath);
@@ -570,25 +705,197 @@ function serveFile(res, filePath) {
   });
 }
 
+// ── Rate Limiting ─────────────────────────────────────────────────────────────
+const rateLimitMap = {};
+const RATE_LIMIT  = 100;              // max requests per window per IP
+const RATE_WINDOW = 15 * 60 * 1000;  // 15 minutes
+
+function checkRateLimit(ip) {
+  const now = Date.now();
+  if (!rateLimitMap[ip] || (now - rateLimitMap[ip].start) > RATE_WINDOW) {
+    rateLimitMap[ip] = { start: now, count: 1 };
+    return true;
+  }
+  rateLimitMap[ip].count++;
+  return rateLimitMap[ip].count <= RATE_LIMIT;
+}
+
+// ── Concurrent Requests Limiter ───────────────────────────────────────────────
+// يحد من الطلبات المتزامنة لحماية الـ RAM والـ CPU
+const MAX_CONCURRENT  = 10;   // حد أقصى 10 طلبات في نفس الوقت
+let   activeRequests  = 0;    // عداد الطلبات النشطة حالياً
+const MEM_WARN_MB     = 400;  // يحذر إذا تجاوز استهلاك RAM هذا الحد
+
+function trackRequest(res, next) {
+  activeRequests++;
+
+  // تحذير عند تجاوز الحد
+  if (activeRequests > MAX_CONCURRENT) {
+    console.warn(`[Concurrency] ⚠ ${activeRequests} active requests (limit: ${MAX_CONCURRENT})`);
+  }
+
+  // فحص استهلاك الذاكرة وتسجيل تحذير إذا تجاوز الحد
+  const memMB = Math.round(process.memoryUsage().heapUsed / 1024 / 1024);
+  if (memMB > MEM_WARN_MB) {
+    console.warn(`[Memory] ⚠ Heap usage: ${memMB}MB (warn threshold: ${MEM_WARN_MB}MB)`);
+  }
+
+  // تنقيص العداد عند انتهاء الطلب
+  res.on('finish', () => { activeRequests = Math.max(0, activeRequests - 1); });
+  res.on('close',  () => { activeRequests = Math.max(0, activeRequests - 1); });
+
+  next();
+}
+
+function isConcurrencyExceeded() {
+  return activeRequests > MAX_CONCURRENT;
+}
+
 // ── HTTP Server ────────────────────────────────────────────────────────────────
 const server = http.createServer(async (req, res) => {
   const parsed = url.parse(req.url, true);
   const p      = parsed.pathname;
   const method = req.method;
 
-  // CORS preflight
+  // CORS preflight — لا تحسب الـ preflight ضمن العداد
   if (method === 'OPTIONS') { sendJSON(res, {}, 200); return; }
 
-  // ── /api/verify-token (lightweight auth check) ──────────────────────────
+  // تتبع الطلبات النشطة + تحذيرات الذاكرة
+  trackRequest(res, () => {});
+
+  // رفض الطلبات إذا تجاوزنا الحد الأقصى للطلبات المتزامنة
+  if (isConcurrencyExceeded() && p.startsWith('/api/')) {
+    console.warn(`[Concurrency] 🚫 Rejecting request — ${activeRequests} active (max: ${MAX_CONCURRENT})`);
+    sendJSON(res, { error: 'Server busy. Too many concurrent requests. Try again shortly.' }, 503);
+    return;
+  }
+
+  // Rate limit API endpoints (per IP)
+  const clientIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress || '';
+  if (p.startsWith('/api/') && !checkRateLimit(clientIp)) {
+    sendJSON(res, { error: 'Rate limited. Try again in 15 minutes.' }, 429);
+    return;
+  }
+
+  // ── /api/auth/register (create account with email + password + API token) ──
+  if (p === '/api/auth/register' && method === 'POST') {
+    if (!db.usePostgres) {
+      sendJSON(res, { ok: false, error: 'قاعدة البيانات غير متصلة. يرجى إعداد DATABASE_URL في إعدادات السيرفر.' }, 503);
+      return;
+    }
+    try {
+      const b = JSON.parse(await readBody(req) || '{}');
+      const email = (b.email || '').trim();
+      const password = (b.password || '');
+      const apiToken = (b.apiToken || '').trim();
+      const name = (b.name || '').trim();
+
+      if (!email || !password || !apiToken) {
+        sendJSON(res, { ok: false, error: 'البريد الإلكتروني وكلمة المرور و API Token مطلوبة' }, 400);
+        return;
+      }
+      if (password.length < 6) {
+        sendJSON(res, { ok: false, error: 'Password must be at least 6 characters' }, 400);
+        return;
+      }
+      // Verify the API token works
+      const r = await apiGet(apiToken, '/orders', { page: 1, per_page: 1 });
+      if (!r.data && r.status !== 'success') {
+        sendJSON(res, { ok: false, error: 'Invalid API token' }, 400);
+        return;
+      }
+      // Check if email already exists
+      const existing = await db.getUserByEmail(email);
+      if (existing) {
+        sendJSON(res, { ok: false, error: 'Email already registered' }, 409);
+        return;
+      }
+      const user = await db.createUser(email, password, apiToken, name);
+      const session = await db.createSession(user.id);
+      sendJSON(res, {
+        ok: true,
+        sessionToken: session.sessionToken,
+        user: { id: user.id, email: user.email, name: user.name }
+      });
+    } catch (e) { sendJSON(res, { ok: false, error: e.message }, 500); }
+    return;
+  }
+
+  // ── /api/auth/login (email + password login) ────────────────────────────
+  if (p === '/api/auth/login' && method === 'POST') {
+    if (!db.usePostgres) {
+      sendJSON(res, { ok: false, error: 'قاعدة البيانات غير متصلة. يرجى إعداد DATABASE_URL في إعدادات السيرفر.' }, 503);
+      return;
+    }
+    try {
+      const b = JSON.parse(await readBody(req) || '{}');
+      const email = (b.email || '').trim();
+      const password = (b.password || '');
+
+      if (!email || !password) {
+        sendJSON(res, { ok: false, error: 'البريد الإلكتروني وكلمة المرور مطلوبة' }, 400);
+        return;
+      }
+      const user = await db.getUserByEmail(email);
+      if (!user) {
+        sendJSON(res, { ok: false, error: 'Invalid email or password' }, 401);
+        return;
+      }
+      const valid = await db.verifyPassword(password, user.password_hash);
+      if (!valid) {
+        sendJSON(res, { ok: false, error: 'Invalid email or password' }, 401);
+        return;
+      }
+      const session = await db.createSession(user.id);
+      sendJSON(res, {
+        ok: true,
+        sessionToken: session.sessionToken,
+        user: { id: user.id, email: user.email, name: user.name }
+      });
+    } catch (e) { sendJSON(res, { ok: false, error: e.message }, 500); }
+    return;
+  }
+
+  // ── /api/auth/logout ────────────────────────────────────────────────────
+  if (p === '/api/auth/logout' && method === 'POST') {
+    try {
+      const sessionToken = (req.headers['authorization'] || '').replace('Bearer ', '').trim();
+      if (sessionToken) await db.deleteSession(sessionToken);
+      sendJSON(res, { ok: true });
+    } catch (e) { sendJSON(res, { ok: false, error: e.message }, 500); }
+    return;
+  }
+
+  // ── /api/auth/me (get current user info) ────────────────────────────────
+  if (p === '/api/auth/me' && method === 'GET') {
+    try {
+      const sessionToken = (req.headers['authorization'] || '').replace('Bearer ', '').trim();
+      if (!sessionToken) { sendJSON(res, { ok: false, error: 'Not authenticated' }, 401); return; }
+      const session = await db.getSession(sessionToken);
+      if (!session) { sendJSON(res, { ok: false, error: 'Session expired' }, 401); return; }
+      sendJSON(res, {
+        ok: true,
+        user: { id: session.user_id, email: session.email, name: session.name }
+      });
+    } catch (e) { sendJSON(res, { ok: false, error: e.message }, 500); }
+    return;
+  }
+
+  // ── /api/verify-token (legacy — now also supports session-based) ───────
   if (p === '/api/verify-token' && method === 'POST') {
     try {
       const b     = JSON.parse(await readBody(req) || '{}');
-      const token = (b.token || '').trim();
+      const token = (req.headers['authorization']?.replace('Bearer ', '') || b.token || '').trim();
       if (!token) { sendJSON(res, { ok: false, error: 'No token' }, 400); return; }
-      // Try a cheap call to verify the token is valid
+      // Check if it's a session token first
+      const session = await db.getSession(token);
+      if (session) {
+        sendJSON(res, { ok: true, user: { email: session.email, name: session.name } });
+        return;
+      }
+      // Fallback: direct API token verification
       const r = await apiGet(token, '/orders', { page: 1, per_page: 1 });
       if (r.status === 'success' || Array.isArray(r.data) || r.data) {
-        // If webhookSecret provided, register it
         if (b.webhookSecret) getState(token).webhookSecret = b.webhookSecret;
         sendJSON(res, { ok: true, totalOrders: r.meta?.pagination?.total || 0 });
       } else {
@@ -612,8 +919,41 @@ const server = http.createServer(async (req, res) => {
 
   // ── All remaining /api/* routes require a token ──────────────────────────
   if (p.startsWith('/api/')) {
-    const token = extractToken(req);
+    const { apiToken: token, userId } = await resolveApiToken(req);
     if (!token) { sendJSON(res, { error: 'Unauthorized — provide Bearer token' }, 401); return; }
+
+    // ── /api/notifications (get user notifications) ────────────────────
+    if (p === '/api/notifications' && method === 'GET' && userId) {
+      try {
+        const notifs = await db.getNotifications(userId);
+        const unread = await db.getUnreadNotificationCount(userId);
+        sendJSON(res, { notifications: notifs, unreadCount: unread });
+      } catch (e) { sendJSON(res, { error: e.message }, 500); }
+      return;
+    }
+
+    // ── /api/notifications/read (mark notification as read) ────────────
+    if (p === '/api/notifications/read' && method === 'POST' && userId) {
+      try {
+        const b = JSON.parse(await readBody(req) || '{}');
+        if (b.id) await db.markNotificationRead(userId, b.id);
+        else await db.markAllNotificationsRead(userId);
+        sendJSON(res, { ok: true });
+      } catch (e) { sendJSON(res, { error: e.message }, 500); }
+      return;
+    }
+
+    // ── /api/notifications/check-stock (smart coverage vs shipping check) ──
+    if (p === '/api/notifications/check-stock' && method === 'POST' && userId) {
+      try {
+        const b = JSON.parse(await readBody(req) || '{}');
+        const coverageData = b.coverageData || [];
+        const newNotifs = await db.checkAndNotifyCoverage(userId, coverageData);
+        const unread = await db.getUnreadNotificationCount(userId);
+        sendJSON(res, { ok: true, newNotifications: newNotifs.length, unreadCount: unread });
+      } catch (e) { sendJSON(res, { error: e.message }, 500); }
+      return;
+    }
 
     // ── /api/debug-page (TEMPORARY — fetch a single page and return raw response) ──
     if (p === '/api/debug-page' && method === 'GET') {
@@ -649,6 +989,62 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
+    // ── /api/analytics ─────────────────────────────────────────────────
+    if (p === '/api/analytics' && method === 'GET') {
+      try {
+        await buildStats(token);
+        const raw = getCache(cacheKey('raw_orders', token)) || [];
+        const now = new Date();
+        const todayStr = now.toISOString().slice(0,10);
+        const last7 = [];
+        const last30 = [];
+        for (let i = 0; i < 30; i++) {
+          const d = new Date(now); d.setDate(d.getDate() - i);
+          const ds = d.toISOString().slice(0,10);
+          const dayOrders = raw.filter(o => (o.created_at||'').slice(0,10) === ds);
+          if (i < 7) last7.push(dayOrders.length);
+          last30.push(dayOrders.length);
+        }
+        const avg7 = last7.length ? r2(last7.reduce((a,b)=>a+b,0) / last7.length) : 0;
+        const avg30 = last30.length ? r2(last30.reduce((a,b)=>a+b,0) / last30.length) : 0;
+
+        // Top products by order count
+        const prodCount = {};
+        raw.forEach(o => {
+          (o.products||[]).forEach(p => {
+            const name = p.name || p.sku || 'Unknown';
+            prodCount[name] = (prodCount[name]||0) + (parseInt(p.quantity)||1);
+          });
+        });
+        const topProducts = Object.entries(prodCount)
+          .sort((a,b) => b[1]-a[1])
+          .slice(0,5)
+          .map(([name, count]) => ({ name, count }));
+
+        // Country performance
+        const countryPerf = {};
+        raw.forEach(o => {
+          const co = normCountry(o.customer_country?.name, o.customer_country?.code);
+          if (!countryPerf[co]) countryPerf[co] = { total: 0, delivered: 0, returned: 0, revenue: 0 };
+          countryPerf[co].total++;
+          const cls = classifyStatus(o.status);
+          if (cls === 'delivered') { countryPerf[co].delivered++; countryPerf[co].revenue += orderTotal(o); }
+          if (cls === 'returned') countryPerf[co].returned++;
+        });
+
+        sendJSON(res, {
+          dailyAvg7: avg7,
+          dailyAvg30: avg30,
+          trend: avg7 > avg30 ? 'up' : avg7 < avg30 ? 'down' : 'stable',
+          projectedMonthly: r2(avg7 * 30),
+          topProducts,
+          countryPerformance: countryPerf,
+          totalAnalyzed: raw.length,
+        });
+      } catch (e) { sendJSON(res, { error: e.message }, 500); }
+      return;
+    }
+
     // ── /api/stats ────────────────────────────────────────────────────────
     if (p === '/api/stats' && method === 'GET') {
       try { sendJSON(res, await buildStats(token)); }
@@ -667,6 +1063,21 @@ const server = http.createServer(async (req, res) => {
     if (p === '/api/products' && method === 'GET') {
       try { sendJSON(res, await getProducts(token)); }
       catch (e) { sendJSON(res, { error: e.message }, 500); }
+      return;
+    }
+
+    // ── /api/low-stock-count ──────────────────────────────────────────────
+    if (p === '/api/low-stock-count' && method === 'GET') {
+      try {
+        const prods = await getProducts(token);
+        const LOW_THRESHOLD = 10;
+        let count = 0;
+        (prods.data || []).forEach(prod => {
+          const totalQty = (prod.stocks || []).reduce((s, st) => s + (st.quantity || 0), 0);
+          if (totalQty < LOW_THRESHOLD) count++;
+        });
+        sendJSON(res, { count, threshold: LOW_THRESHOLD });
+      } catch (e) { sendJSON(res, { error: e.message }, 500); }
       return;
     }
 
@@ -695,16 +1106,33 @@ const server = http.createServer(async (req, res) => {
         const b  = JSON.parse(await readBody(req) || '{}');
         const st = getState(token);
         if (b.country && b.days != null) {
-          st.shippingDays[b.country] = Math.max(1, parseInt(b.days)||1);
+          const days = Math.max(1, parseInt(b.days)||1);
+          st.shippingDays[b.country] = days;
           delete cache[cacheKey('inv_enh', token)];
+          // Persist to DB (PostgreSQL or file)
+          db.saveShippingDays(token, b.country, days).catch(e =>
+            console.error('[DB] saveShippingDays failed:', e.message)
+          );
         }
         sendJSON(res, { ...st.shippingDays, _flags: FLAG });
       } catch (e) { sendJSON(res, { error: e.message }, 400); }
       return;
     }
 
+    // ── /api/webhook-info (get webhook URL with real API token) ─────────
+    if (p === '/api/webhook-info' && method === 'GET') {
+      sendJSON(res, { apiToken: token });
+      return;
+    }
+
     // ── /api/webhook-log ──────────────────────────────────────────────────
     if (p === '/api/webhook-log' && method === 'GET') {
+      if (db.usePostgres) {
+        try {
+          const logs = await db.getWebhookLogs(token, 100);
+          sendJSON(res, logs); return;
+        } catch (e) { /* fall through to in-memory */ }
+      }
       sendJSON(res, getState(token).webhookLog); return;
     }
 
@@ -754,5 +1182,5 @@ const server = http.createServer(async (req, res) => {
 server.listen(PORT, () => {
   const addr = `http://localhost:${PORT}`;
   console.log(`\n  ✅  CODNETWORK Dashboard  →  ${addr}\n`);
-  exec(`start ${addr}`);
+  openUrl(addr);
 });
