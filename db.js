@@ -512,6 +512,77 @@ async function getLatestOrdersCache(token) {
   }
 }
 
+/* ─── Product Groups (synced via PostgreSQL) ───────────────────────────── */
+async function getProductGroups(userId) {
+  if (!pool) return {};
+  const res = await query('SELECT group_name, skus FROM product_groups WHERE user_id=$1 ORDER BY created_at', [userId]);
+  const groups = {};
+  res.rows.forEach(r => { groups[r.group_name] = r.skus; });
+  return groups;
+}
+
+async function saveProductGroups(userId, groups) {
+  if (!pool) return;
+  await query('DELETE FROM product_groups WHERE user_id=$1', [userId]);
+  const entries = Object.entries(groups);
+  for (const [name, skus] of entries) {
+    await query('INSERT INTO product_groups(user_id, group_name, skus) VALUES($1,$2,$3)', [userId, name, skus]);
+  }
+}
+
+/* ─── Todos (synced via PostgreSQL) ────────────────────────────────────── */
+async function getTodos(userId) {
+  if (!pool) return [];
+  const res = await query('SELECT id, title, description, done, created_at FROM todos WHERE user_id=$1 ORDER BY created_at DESC', [userId]);
+  return res.rows;
+}
+
+async function saveTodo(userId, title, description) {
+  if (!pool) return null;
+  const res = await query('INSERT INTO todos(user_id, title, description) VALUES($1,$2,$3) RETURNING *', [userId, title, description || '']);
+  return res.rows[0];
+}
+
+async function updateTodo(userId, todoId, updates) {
+  if (!pool) return;
+  if (updates.done !== undefined) {
+    await query('UPDATE todos SET done=$1 WHERE id=$2 AND user_id=$3', [updates.done, todoId, userId]);
+  }
+  if (updates.title !== undefined) {
+    await query('UPDATE todos SET title=$1 WHERE id=$2 AND user_id=$3', [updates.title, todoId, userId]);
+  }
+}
+
+async function deleteTodo(userId, todoId) {
+  if (!pool) return;
+  await query('DELETE FROM todos WHERE id=$1 AND user_id=$2', [todoId, userId]);
+}
+
+/* ─── User Settings (generic key-value synced to PostgreSQL) ───────────── */
+async function getUserSetting(userId, key) {
+  if (!pool) return null;
+  const res = await query('SELECT setting_value FROM user_settings WHERE user_id=$1 AND setting_key=$2', [userId, key]);
+  return res.rows.length ? res.rows[0].setting_value : null;
+}
+
+async function saveUserSetting(userId, key, value) {
+  if (!pool) return;
+  await query(
+    `INSERT INTO user_settings(user_id, setting_key, setting_value, updated_at)
+     VALUES($1,$2,$3::jsonb, NOW())
+     ON CONFLICT(user_id, setting_key) DO UPDATE SET setting_value=$3::jsonb, updated_at=NOW()`,
+    [userId, key, JSON.stringify(value)]
+  );
+}
+
+async function getAllUserSettings(userId) {
+  if (!pool) return {};
+  const res = await query('SELECT setting_key, setting_value FROM user_settings WHERE user_id=$1', [userId]);
+  const settings = {};
+  res.rows.forEach(r => { settings[r.setting_key] = r.setting_value; });
+  return settings;
+}
+
 /* ─── Graceful shutdown ──────────────────────────────────────────────────── */
 async function closePool() {
   if (pool) {
@@ -569,6 +640,21 @@ module.exports = {
   markNotificationRead,
   markAllNotificationsRead,
   checkAndNotifyCoverage,
+
+  // product groups
+  getProductGroups,
+  saveProductGroups,
+
+  // todos
+  getTodos,
+  saveTodo,
+  updateTodo,
+  deleteTodo,
+
+  // user settings
+  getUserSetting,
+  saveUserSetting,
+  getAllUserSettings,
 
   // util
   hashToken,

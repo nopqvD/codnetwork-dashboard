@@ -97,6 +97,36 @@ CREATE TABLE IF NOT EXISTS orders_cache (
   saved_at TIMESTAMP DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS product_groups (
+  id SERIAL PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  group_name VARCHAR(255) NOT NULL,
+  skus TEXT[] NOT NULL DEFAULT '{}',
+  created_at TIMESTAMP DEFAULT NOW(),
+  UNIQUE(user_id, group_name)
+);
+
+CREATE TABLE IF NOT EXISTS todos (
+  id SERIAL PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  title VARCHAR(500) NOT NULL,
+  description TEXT DEFAULT '',
+  done BOOLEAN DEFAULT FALSE,
+  created_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS user_settings (
+  id SERIAL PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  setting_key VARCHAR(100) NOT NULL,
+  setting_value JSONB NOT NULL DEFAULT '{}',
+  updated_at TIMESTAMP DEFAULT NOW(),
+  UNIQUE(user_id, setting_key)
+);
+
+CREATE INDEX IF NOT EXISTS idx_product_groups_user ON product_groups(user_id);
+CREATE INDEX IF NOT EXISTS idx_todos_user ON todos(user_id);
+CREATE INDEX IF NOT EXISTS idx_user_settings ON user_settings(user_id);
 CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
 CREATE INDEX IF NOT EXISTS idx_sessions_token ON sessions(session_token);
 CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);

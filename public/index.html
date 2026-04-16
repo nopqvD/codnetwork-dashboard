@@ -1835,6 +1835,21 @@ async function apiFetch(url, opts = {}) {
 }
 
 /* ================================================================
+   CLOUD SYNC HELPERS
+   ================================================================ */
+function syncSetting(key, value) {
+  apiFetch('/api/settings', { method: 'POST', body: JSON.stringify({ key, value }) }).catch(() => {});
+}
+async function loadSettingsFromServer() {
+  try {
+    const settings = await apiFetch('/api/settings');
+    if (settings.ship_return) { localStorage.setItem('cod_ship_return', JSON.stringify(settings.ship_return)); }
+    if (settings.overrides)   { localStorage.setItem('cod_overrides', JSON.stringify(settings.overrides)); }
+    if (settings.expenses)    { localStorage.setItem('cod_expenses', JSON.stringify(settings.expenses)); }
+  } catch {}
+}
+
+/* ================================================================
    ERROR BANNER HELPERS
    ================================================================ */
 let errorRetryFn = null;
@@ -2095,6 +2110,10 @@ function enterApp() {
     if (userEl && user.email) userEl.textContent = user.name || user.email;
   } catch {}
   loadAllData();
+  // Load synced data from server (cloud sync)
+  loadSettingsFromServer();
+  loadGroupsFromServer().then(() => { renderGroups(); populateSkuDropdown(); renderCoverage(); });
+  loadTodosFromServer();
   // Load notifications and check low stock
   checkNotifications();
   // Auto-check notifications every 5 minutes
@@ -3008,7 +3027,10 @@ document.addEventListener('click', e => {
 function getShipReturnConfig() {
   try { return JSON.parse(localStorage.getItem('cod_ship_return') || '{}'); } catch { return {}; }
 }
-function saveShipReturnConfig(cfg) { localStorage.setItem('cod_ship_return', JSON.stringify(cfg)); }
+function saveShipReturnConfig(cfg) {
+  localStorage.setItem('cod_ship_return', JSON.stringify(cfg));
+  syncSetting('ship_return', cfg);
+}
 
 function renderShipReturnConfig() {
   const cfg = getShipReturnConfig();
@@ -3039,10 +3061,25 @@ function updateShipReturn(country, field, value) {
 /* ================================================================
    PRODUCT GROUPS
    ================================================================ */
+let _groupsCache = null;
 function getGroups() {
+  if (_groupsCache) return _groupsCache;
   try { return JSON.parse(localStorage.getItem('cod_groups') || '{}'); } catch { return {}; }
 }
-function saveGroups(g) { localStorage.setItem('cod_groups', JSON.stringify(g)); }
+function saveGroups(g) {
+  _groupsCache = g;
+  localStorage.setItem('cod_groups', JSON.stringify(g));
+  apiFetch('/api/product-groups', { method: 'POST', body: JSON.stringify({ groups: g }) }).catch(() => {});
+}
+async function loadGroupsFromServer() {
+  try {
+    const groups = await apiFetch('/api/product-groups');
+    if (groups && Object.keys(groups).length > 0) {
+      _groupsCache = groups;
+      localStorage.setItem('cod_groups', JSON.stringify(groups));
+    }
+  } catch {}
+}
 
 function addGroup() {
   const name = document.getElementById('groupNameInput').value.trim();
@@ -3102,7 +3139,10 @@ function renderGroups() {
 function getOverrides() {
   try { return JSON.parse(localStorage.getItem('cod_overrides') || '{}'); } catch { return {}; }
 }
-function saveOverrides(o) { localStorage.setItem('cod_overrides', JSON.stringify(o)); }
+function saveOverrides(o) {
+  localStorage.setItem('cod_overrides', JSON.stringify(o));
+  syncSetting('overrides', o);
+}
 
 function addOverride() {
   const sku = document.getElementById('overrideSku').value.trim();
@@ -3151,7 +3191,10 @@ function renderOverrides() {
 function getExpenses() {
   try { return JSON.parse(localStorage.getItem('cod_expenses') || '[]'); } catch { return []; }
 }
-function saveExpenses(e) { localStorage.setItem('cod_expenses', JSON.stringify(e)); }
+function saveExpenses(e) {
+  localStorage.setItem('cod_expenses', JSON.stringify(e));
+  syncSetting('expenses', e);
+}
 
 function addExpense() {
   const name = document.getElementById('expenseName').value.trim();
@@ -3457,36 +3500,50 @@ function formatDate(d) {
 /* ================================================================
    TODO LIST
    ================================================================ */
-function getTodos() {
-  try { return JSON.parse(localStorage.getItem('cod_todos') || '[]'); } catch { return []; }
-}
-function saveTodos(t) { localStorage.setItem('cod_todos', JSON.stringify(t)); }
+let _todosCache = [];
+function getTodos() { return _todosCache; }
 
-function addTodo() {
+async function loadTodosFromServer() {
+  try {
+    const todos = await apiFetch('/api/todos');
+    if (Array.isArray(todos)) {
+      _todosCache = todos.map(t => ({
+        id: t.id, title: t.title, desc: t.description || '', done: t.done,
+        createdAt: t.created_at
+      }));
+      renderTodos();
+    }
+  } catch {}
+}
+
+async function addTodo() {
   const title = document.getElementById('todoTitleInput').value.trim();
   if (!title) return;
   const desc = document.getElementById('todoDescInput').value.trim();
-  const date = document.getElementById('todoDateInput').value;
-  const todos = getTodos();
-  todos.unshift({ id: Date.now(), title, desc, date: date || null, done: false, createdAt: new Date().toISOString() });
-  saveTodos(todos);
+  try {
+    const todo = await apiFetch('/api/todos', { method: 'POST', body: JSON.stringify({ title, description: desc }) });
+    if (todo) {
+      _todosCache.unshift({ id: todo.id, title: todo.title, desc: todo.description || '', done: todo.done, createdAt: todo.created_at });
+    }
+  } catch {}
   document.getElementById('todoTitleInput').value = '';
   document.getElementById('todoDescInput').value = '';
-  document.getElementById('todoDateInput').value = '';
   renderTodos();
 }
 
-function toggleTodo(id) {
-  const todos = getTodos();
-  const t = todos.find(t => t.id === id);
-  if (t) t.done = !t.done;
-  saveTodos(todos);
-  renderTodos();
+async function toggleTodo(id) {
+  const t = _todosCache.find(t => t.id === id);
+  if (t) {
+    t.done = !t.done;
+    renderTodos();
+    apiFetch('/api/todos/' + id, { method: 'PUT', body: JSON.stringify({ done: t.done }) }).catch(() => {});
+  }
 }
 
-function deleteTodo(id) {
-  saveTodos(getTodos().filter(t => t.id !== id));
+async function deleteTodo(id) {
+  _todosCache = _todosCache.filter(t => t.id !== id);
   renderTodos();
+  apiFetch('/api/todos/' + id, { method: 'DELETE' }).catch(() => {});
 }
 
 function renderTodos() {

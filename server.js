@@ -723,7 +723,7 @@ function sendJSON(res, data, status = 200) {
     'Content-Type' : 'application/json',
     'Access-Control-Allow-Origin'  : '*',
     'Access-Control-Allow-Headers' : 'Content-Type,Authorization',
-    'Access-Control-Allow-Methods' : 'GET,POST,OPTIONS',
+    'Access-Control-Allow-Methods' : 'GET,POST,PUT,DELETE,OPTIONS',
   });
   res.end(body);
 }
@@ -1174,6 +1174,86 @@ const server = http.createServer(async (req, res) => {
         } catch (e) { /* fall through to in-memory */ }
       }
       sendJSON(res, getState(token).webhookLog); return;
+    }
+
+    // ── /api/product-groups GET ─────────────────────────────────────────
+    if (p === '/api/product-groups' && method === 'GET' && userId) {
+      try {
+        const groups = await db.getProductGroups(userId);
+        sendJSON(res, groups);
+      } catch (e) { sendJSON(res, { error: e.message }, 500); }
+      return;
+    }
+
+    // ── /api/product-groups POST (save all groups) ───────────────────────
+    if (p === '/api/product-groups' && method === 'POST' && userId) {
+      try {
+        const b = JSON.parse(await readBody(req) || '{}');
+        await db.saveProductGroups(userId, b.groups || {});
+        sendJSON(res, { ok: true });
+      } catch (e) { sendJSON(res, { error: e.message }, 500); }
+      return;
+    }
+
+    // ── /api/todos GET ───────────────────────────────────────────────────
+    if (p === '/api/todos' && method === 'GET' && userId) {
+      try {
+        const todos = await db.getTodos(userId);
+        sendJSON(res, todos);
+      } catch (e) { sendJSON(res, { error: e.message }, 500); }
+      return;
+    }
+
+    // ── /api/todos POST (add todo) ───────────────────────────────────────
+    if (p === '/api/todos' && method === 'POST' && userId) {
+      try {
+        const b = JSON.parse(await readBody(req) || '{}');
+        const todo = await db.saveTodo(userId, b.title || '', b.description || '');
+        sendJSON(res, todo);
+      } catch (e) { sendJSON(res, { error: e.message }, 500); }
+      return;
+    }
+
+    // ── /api/todos PUT (update todo) ─────────────────────────────────────
+    if (p.startsWith('/api/todos/') && method === 'PUT' && userId) {
+      try {
+        const todoId = parseInt(p.split('/').pop());
+        const b = JSON.parse(await readBody(req) || '{}');
+        await db.updateTodo(userId, todoId, b);
+        sendJSON(res, { ok: true });
+      } catch (e) { sendJSON(res, { error: e.message }, 500); }
+      return;
+    }
+
+    // ── /api/todos DELETE ────────────────────────────────────────────────
+    if (p.startsWith('/api/todos/') && method === 'DELETE' && userId) {
+      try {
+        const todoId = parseInt(p.split('/').pop());
+        await db.deleteTodo(userId, todoId);
+        sendJSON(res, { ok: true });
+      } catch (e) { sendJSON(res, { error: e.message }, 500); }
+      return;
+    }
+
+    // ── /api/settings GET (load all user settings) ────────────────────────
+    if (p === '/api/settings' && method === 'GET' && userId) {
+      try {
+        const settings = await db.getAllUserSettings(userId);
+        sendJSON(res, settings);
+      } catch (e) { sendJSON(res, { error: e.message }, 500); }
+      return;
+    }
+
+    // ── /api/settings POST (save a setting) ──────────────────────────────
+    if (p === '/api/settings' && method === 'POST' && userId) {
+      try {
+        const b = JSON.parse(await readBody(req) || '{}');
+        if (b.key && b.value !== undefined) {
+          await db.saveUserSetting(userId, b.key, b.value);
+        }
+        sendJSON(res, { ok: true });
+      } catch (e) { sendJSON(res, { error: e.message }, 500); }
+      return;
     }
 
     // ── /api/refresh ──────────────────────────────────────────────────────
