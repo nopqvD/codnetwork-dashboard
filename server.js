@@ -758,6 +758,9 @@ const server = http.createServer(async (req, res) => {
   const p      = parsed.pathname;
   const method = req.method;
 
+  // Log API requests
+  if (p.startsWith('/api/')) console.log(`[API] ${method} ${p}`);
+
   // CORS preflight — لا تحسب الـ preflight ضمن العداد
   if (method === 'OPTIONS') { sendJSON(res, {}, 200); return; }
 
