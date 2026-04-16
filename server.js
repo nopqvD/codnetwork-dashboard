@@ -371,7 +371,7 @@ function computeStatsFromOrders(orders, totalOrders) {
   };
 }
 
-// ── MODIFIED: buildStats now saves to db.json and does incremental fetches ────
+// ── buildStats: uses PostgreSQL orders_cache, falls back to db.json ────────────
 async function buildStats(token) {
   const ck = cacheKey('stats', token);
   const hit = getCache(ck);
@@ -381,9 +381,24 @@ async function buildStats(token) {
 
   buildingStats[token] = (async () => {
     try {
+      // Try loading from PostgreSQL first, then db.json fallback
+      let savedOrders = [];
+      let lastSaved = null;
       const dbKey = 'orders_' + token.slice(-12);
-      let savedOrders = fileDB[dbKey]?.orders || [];
-      const lastSaved = fileDB[dbKey]?.savedAt || null;
+
+      if (db.usePostgres) {
+        const cached = await db.getLatestOrdersCache(token);
+        if (cached && Array.isArray(cached)) {
+          savedOrders = cached;
+          lastSaved = Date.now(); // treat PG cache as fresh
+          console.log(`[Stats] Loaded ${savedOrders.length} orders from PostgreSQL cache`);
+        }
+      }
+      if (!savedOrders.length) {
+        savedOrders = fileDB[dbKey]?.orders || [];
+        lastSaved = fileDB[dbKey]?.savedAt || null;
+      }
+
       const now = Date.now();
 
       const [statsRes, productsRes] = await Promise.all([
@@ -399,49 +414,70 @@ async function buildStats(token) {
 
       let orders = [];
 
-      // إذا عندنا بيانات محفوظة وعمرها أقل من 6 ساعات، استخدمها مباشرة
       if (savedOrders.length > 0 && lastSaved && (now - lastSaved) < 6 * 60 * 60 * 1000) {
-        console.log(`[Stats] Using saved ${savedOrders.length} orders from file cache`);
-        orders = savedOrders;
+        // بيانات محفوظة وعمرها أقل من 6 ساعات — اجلب فقط الصفحات الجديدة
+        console.log(`[Stats] Incremental update from ${savedOrders.length} cached orders`);
+        const existingIds = new Set(savedOrders.map(o => o.id));
+        let freshOrders = [...(p1.data || [])];
+        let foundOverlap = freshOrders.some(o => existingIds.has(o.id)) && freshOrders.length > 0;
+
+        if (!foundOverlap) {
+          for (let pg = 2; pg <= totalPages; pg++) {
+            if (foundOverlap) break;
+            try {
+              const r = await apiGetRetry(token, '/orders', { page: pg });
+              const pageOrders = r.data || [];
+              if (!pageOrders.length) break;
+              freshOrders.push(...pageOrders);
+              if (pageOrders.some(o => existingIds.has(o.id))) foundOverlap = true;
+              await new Promise(r => setTimeout(r, 300));
+            } catch (e) { break; }
+          }
+        }
+
+        const brandNew = freshOrders.filter(o => !existingIds.has(o.id));
+        const freshIds = new Set(freshOrders.map(o => o.id));
+        const unchangedOld = savedOrders.filter(o => !freshIds.has(o.id));
+        orders = [...freshOrders, ...unchangedOld];
+        console.log(`[Stats] Added ${brandNew.length} new, updated ${freshOrders.length - brandNew.length}, kept ${unchangedOld.length} old`);
       } else if (savedOrders.length > 0) {
-        // عندنا بيانات قديمة — اجلب حتى نجد طلبات موجودة أو ننتهي
-        console.log(`[Stats] Incremental fetch — fetching until overlap with saved data`);
+        // بيانات قديمة — incremental fetch
+        console.log(`[Stats] Stale cache — incremental fetch`);
         const existingIds = new Set(savedOrders.map(o => o.id));
         let freshOrders = [...(p1.data || [])];
         let foundOverlap = false;
         for (let pg = 2; pg <= totalPages; pg++) {
-          // Check if last page had overlap
           if (foundOverlap) break;
           try {
             const r = await apiGetRetry(token, '/orders', { page: pg });
             const pageOrders = r.data || [];
             if (!pageOrders.length) break;
             freshOrders.push(...pageOrders);
-            // If any order on this page exists in saved data, we've caught up
-            if (pageOrders.some(o => existingIds.has(o.id))) {
-              foundOverlap = true;
-            }
+            if (pageOrders.some(o => existingIds.has(o.id))) foundOverlap = true;
             await new Promise(r => setTimeout(r, 300));
           } catch (e) { break; }
         }
         const brandNew = freshOrders.filter(o => !existingIds.has(o.id));
-        // Also update existing orders with fresh data
         const freshIds = new Set(freshOrders.map(o => o.id));
         const unchangedOld = savedOrders.filter(o => !freshIds.has(o.id));
         orders = [...freshOrders, ...unchangedOld];
         console.log(`[Stats] Added ${brandNew.length} new, updated ${freshOrders.length - brandNew.length}, kept ${unchangedOld.length} old`);
       } else {
-        // أول مرة: اجلب كل شيء باستخدام fetchAllOrders
+        // أول مرة: اجلب كل شيء
         console.log(`[Stats] First time fetch: ${totalPages} pages`);
         const fetched = await fetchAllOrders(token);
         if (!fetched) return null;
         orders = fetched;
       }
 
-      // احفظ في db.json
+      // Save to PostgreSQL (primary) and db.json (fallback)
+      if (db.usePostgres) {
+        db.saveOrdersCache(token, orders).then(() =>
+          console.log(`[Stats] Saved ${orders.length} orders to PostgreSQL`)
+        ).catch(e => console.error('[Stats] PG save error:', e.message));
+      }
       fileDB[dbKey] = { orders, savedAt: now, total: totalOrders };
       saveDB(fileDB);
-      console.log(`[Stats] Saved ${orders.length} orders to db.json`);
 
       setCache(cacheKey('raw_orders', token), orders);
       const data = computeStatsFromOrders(orders, totalOrders);
