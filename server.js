@@ -73,6 +73,18 @@ const API_HOST = 'seller.cod.network';
 const DEFAULT_SHIPPING_DAYS = { KSA: 30, UAE: 10, KWT: 35, QAT: 35, OM: 10, BHR: 20 };
 const FLAG = { KSA:'🇸🇦', UAE:'🇦🇪', KWT:'🇰🇼', QAT:'🇶🇦', OM:'🇴🇲', BHR:'🇧🇭' };
 
+// ── Webhook short token mapping ────────────────────────────────────────────────
+// Maps short hash (16 chars) → full API token, so webhook URLs stay under 255 chars
+const webhookTokenMap = {};
+function getWebhookShortId(apiToken) {
+  const short = crypto.createHash('sha256').update(apiToken).digest('hex').slice(0, 16);
+  webhookTokenMap[short] = apiToken;
+  return short;
+}
+function resolveWebhookShortId(shortId) {
+  return webhookTokenMap[shortId] || shortId; // fallback to raw token for backwards compat
+}
+
 // ── Per-user state ─────────────────────────────────────────────────────────────
 // Keyed by API token string. State is in-memory (resets on server restart).
 const userState = {};
@@ -711,7 +723,10 @@ async function resolveApiToken(req) {
   // Try session-based auth
   try {
     const session = await db.getSession(rawToken);
-    if (session) return { apiToken: session.api_token, userId: session.user_id };
+    if (session) {
+      getWebhookShortId(session.api_token); // populate webhook mapping
+      return { apiToken: session.api_token, userId: session.user_id };
+    }
   } catch {}
   // Fallback: raw token is the API token itself
   return { apiToken: rawToken, userId: null };
@@ -1159,9 +1174,10 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
-    // ── /api/webhook-info (get webhook URL with real API token) ─────────
+    // ── /api/webhook-info (get short webhook token) ────────────────────
     if (p === '/api/webhook-info' && method === 'GET') {
-      sendJSON(res, { apiToken: token });
+      const shortId = getWebhookShortId(token);
+      sendJSON(res, { apiToken: shortId });
       return;
     }
 
@@ -1268,7 +1284,7 @@ const server = http.createServer(async (req, res) => {
   // ── /webhook (incoming from CODNETWORK) ──────────────────────────────────
   if (p === '/webhook' && method === 'POST') {
     const rawBody = await readBody(req);
-    const token   = parsed.query.token || '';
+    const token   = resolveWebhookShortId(parsed.query.token || '');
     const sig     = req.headers['x-cod-signature'] ||
                     req.headers['x-webhook-secret']  ||
                     req.headers['authorization']      || '';
