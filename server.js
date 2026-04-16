@@ -44,6 +44,7 @@ const openUrl = (u) => {
     const args   = isWin ? ['/c','start','',u] : [u];
     const opts   = { detached: true, stdio: 'ignore', shell: false };
     const child  = spawn(cmd, args, opts);
+    child.on('error', () => {});
     child.unref();
   } catch (e) {
     console.warn('[openUrl] Could not open browser:', e.message);
